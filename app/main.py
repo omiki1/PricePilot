@@ -8,12 +8,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-# 入口先读 .env：来源适配器与模型都从环境变量取配置，不各自重复加载。
+# 入口先读 .env：模型配置从环境变量取，不各自重复加载。
 load_dotenv()
 
 # 路由与参考工程一致：app/web/<name>_router/__init__.py 导出 xxx_router，这里只做 include。
 from app.web.intent_router import intent_router
-from app.web.shopping_router import shopping_router
 from app.web.system_router import system_router
 
 logger = logging.getLogger("pricepilot.main")
@@ -38,8 +37,6 @@ async def lifespan(app: FastAPI):
          （app/web/intent_router 就是这么拿的），检查点生命周期由应用统一管理。
     """
     from app.ai.agent.multi_agent.node.graph.shopping_graph import ShoppingGraph
-    from app.ai.tool import build_source, enabled_source_names
-    from app.ai.tool.search_cache import SearchCache
 
     try:
         app.state.shopping_graph = ShoppingGraph()
@@ -49,33 +46,10 @@ async def lifespan(app: FastAPI):
         app.state.shopping_graph = None
         logger.error("ShoppingGraph 创建失败，意图识别接口将返回 503：%s", exc)
 
-    # 商品来源适配器：启停由 PRICEPILOT_ENABLED_SOURCES 控制（默认只开 taobao），
-    # token 从 .env 读；某个来源没配好只影响它自己，不会拖垮其它接口。
-    sources: dict = {}
-    try:
-        for name in enabled_source_names():
-            source = build_source(name)
-            sources[name] = source
-            logger.info(
-                "来源已装配：%s actor=%s 凭证=%s",
-                name, getattr(source, 'actor', '-'), "有" if source.configured else "缺",
-            )
-    except Exception as exc:
-        logger.error("来源装配失败（%s），商品检索接口将返回 503", exc)
-
-    app.state.sources = sources
-    app.state.search_cache = SearchCache(ttl_seconds=float(os.environ.get("PRICEPILOT_CACHE_TTL", "600")))
-    logger.info(
-        "来源总计 %d 个：%s；检索缓存 TTL %.0fs",
-        len(sources), "、".join(sources) or "无", app.state.search_cache.ttl_seconds,
-    )
-
     try:
         yield
     finally:
         app.state.shopping_graph = None
-        app.state.sources = {}
-        app.state.search_cache = None
         logger.info("PricePilot 已释放，资源已清理")
 
 
@@ -92,8 +66,6 @@ application.add_middleware(
 
 # 意图识别业务：POST /api/intent、POST /api/intent/stream
 application.include_router(intent_router, prefix="/api")
-# 商品来源检索：POST /api/xianyu/search
-application.include_router(shopping_router, prefix="/api")
 # 运维接口：GET /health
 application.include_router(system_router)
 
@@ -102,6 +74,7 @@ app = application
 
 
 def main() -> None:
+    """开发启动入口：``python -m app.main``，默认 http://127.0.0.1:8000。"""
     logging.basicConfig(
         level=os.environ.get("PRICEPILOT_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -113,6 +86,7 @@ def main() -> None:
 
     logger.info("PricePilot 启动于 http://%s:%s（前端默认 http://127.0.0.1:8080）", host, port)
     uvicorn.run(application, host=host, port=port, log_level="info")
+
 
 if __name__ == "__main__":
     main()
