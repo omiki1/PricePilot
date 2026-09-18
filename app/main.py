@@ -13,6 +13,7 @@ load_dotenv()
 
 # 路由与参考工程一致：app/web/<name>_router/__init__.py 导出 xxx_router，这里只做 include。
 from app.web.intent_router import intent_router
+from app.web.products_router import products_router
 from app.web.system_router import system_router
 
 logger = logging.getLogger("pricepilot.main")
@@ -66,6 +67,8 @@ application.add_middleware(
 
 # 意图识别业务：POST /api/intent、POST /api/intent/stream
 application.include_router(intent_router, prefix="/api")
+# 商品检索结果：POST /api/products/search（只读 state["products"]，供前端验证 Shopify 接入）
+application.include_router(products_router, prefix="/api")
 # 运维接口：GET /health
 application.include_router(system_router)
 
