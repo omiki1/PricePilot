@@ -30,6 +30,29 @@ export async function recognizeIntent({ question, userId, sessionId }) {
   return payload
 }
 
+/**
+ * 商品检索：跑一次图，返回意图识别文本 + 检索到的商品列表。
+ * POST /api/products/search —— 只读 state["products"]，目前来源是 Shopify。
+ */
+export async function searchProducts({ question, userId, sessionId }) {
+  const response = await fetch(`${API_BASE}/api/products/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      question,
+      user_id: userId || 'default',
+      session_id: sessionId || '',
+    }),
+  })
+
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    const detail = payload && payload.detail ? payload.detail : `请求失败（${response.status}）`
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+  }
+  return payload
+}
+
 /** 从后端返回的一句话里取出 category / price，仅用于展示，不参与业务判断。 */
 export function parseIntent(text) {
   const categoryMatch = text.match(/商品类型[：:]\s*([^\s，,。]*)/)
