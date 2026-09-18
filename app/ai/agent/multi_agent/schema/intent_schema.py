@@ -1,0 +1,7 @@
+from pydantic import BaseModel,Field
+'''
+意图识别格式化响应输出的结果
+'''
+class IntentSchema(BaseModel):
+    category:str = Field(...,description='商品类型')
+    price:float = Field(...,description='价格')
