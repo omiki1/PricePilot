@@ -1,5 +1,3 @@
-"""系统路由：健康检查等运维接口。"""
-
 from fastapi import APIRouter, Request
 
 system_router = APIRouter(tags=['ops'])
