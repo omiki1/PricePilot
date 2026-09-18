@@ -178,3 +178,133 @@ input:focus {
   color: #9ca3af;
   font-size: 12px;
 }
+
+/* ---------- 操作区 ---------- */
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.primary.ghost {
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.primary.ghost:disabled {
+  background: #e5e7eb;
+  color: #9ca3af;
+}
+
+/* ---------- Shopify 返回校验 ---------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.stat {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat strong {
+  font-size: 15px;
+}
+
+.notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.notice-warn {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+/* ---------- 商品卡 ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.offer {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.offer img,
+.image-placeholder {
+  width: 100%;
+  height: 150px;
+  object-fit: contain;
+  background: #f8fafc;
+}
+
+.image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.offer-body {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.offer-body h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.price {
+  color: #dc2626;
+  font-size: 16px;
+}
+
+.offer-meta {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.offer-tags {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.offer-tags span {
+  background: #f3f4f6;
+  color: #4b5563;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.offer a {
+  font-size: 12px;
+  color: #2563eb;
+}
