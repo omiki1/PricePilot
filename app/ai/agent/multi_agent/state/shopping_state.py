@@ -7,3 +7,6 @@ class ShoppingState(TypedDict):
     session_id: int
     category:str
     price: float
+    # 淘宝返回的统一商品
+    products: list
+

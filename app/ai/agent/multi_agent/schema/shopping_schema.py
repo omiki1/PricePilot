@@ -1,9 +1,18 @@
-"""购物业务的共享数据结构。
+from pydantic import BaseModel, Field
+class TaobaoSearchInput(BaseModel):
+    enrichWithDetails: bool = False
+    fetchReviews: bool = False
+    keyword: str
+    maxItems: int = 10
+    tmallOnly: bool = False
 
-命名沿用手册《结构化数据合同》的口径：来源适配器把平台返回映射成 Offer，
-前端只展示后端给的字段，不自己从文字里抠价格。
 
-当前是空的：商品来源（Offer/SearchOutcome）与检索编排已按你的要求撤掉，
-接入方案与实测字段档案见
-`PricePilot-购物决策Agent开发手册/附录/Apify检索接入-代码存档与实测.md`。
-"""
+class Product(BaseModel):
+    platform: str
+    product_id: str | None = None
+    title: str
+    price: float
+    currency: str = "CNY"
+    image_url: str | None = None
+    url: str | None = None
+    shop_name: str | None = None
