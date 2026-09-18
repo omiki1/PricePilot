@@ -21,5 +21,8 @@ def intent_node(state:ShoppingState):
     return {
         'messages':[AIMessage(content=ai_msg)],
         'category':data['category'],
-        'price':data['price']
+        'price':data['price'],
+        # 结构化意图一并落到 state：下游检索靠它决定价格区间，不用再去文本里抠
+        'price_operator':data.get('price_operator') or '',
+        'price_min':data.get('price_min') or 0,
     }
