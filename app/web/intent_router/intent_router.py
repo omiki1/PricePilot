@@ -5,8 +5,7 @@
      `app/web/<name>_router/` 结构保持一致：`__init__.py` 只负责导出 `intent_router`。
   2. ShoppingGraph 从 `request.app.state.shopping_graph` 获取（在 main.py 的 lifespan 里创建），
      不由本模块自己 new —— 图和它的检查点(inmemory memory)由应用统一管理、统一释放。
-  3. 当前只接通已完成的意图识别业务（START → intent → END），
-     搜索/标准化/比价等节点实现后再往这个 router 里加接口。
+  3. 当前只接通已完成的意图识别业务（START → intent → END）。
 """
 
 from fastapi import APIRouter, HTTPException, Request
