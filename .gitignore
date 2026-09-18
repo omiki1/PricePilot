@@ -1,0 +1,155 @@
+# ============================================================
+# PricePilot .gitignore
+# 技术栈：Python 3 + FastAPI + LangGraph + uvicorn
+#         前端静态页（app/html）+ 多进程价格监控（app/jobs）
+#         存储：PostgreSQL / MySQL + Redis / Neo4j
+#         提示词：YAML（app/ai/prompt/*.yaml）——这些必须提交，不要忽略
+# ============================================================
+
+# ---------- 1. 密钥与本地配置（最重要，切勿提交）----------
+.env
+.env.*
+!.env.example
+*.local.yml
+*.local.yaml
+*.local.json
+config.local.*
+secrets.*
+credentials.*
+*_credentials.json
+service-account*.json
+
+# 证书与私钥
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# 邮箱 / 平台 API 的本地凭证文件（邮件提醒相关）
+mail_password.txt
+postgres_password.txt
+api_keys.txt
+
+# ---------- 2. Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+sdist/
+wheels/
+eggs/
+.eggs/
+*.egg-info/
+*.egg
+MANIFEST
+pip-wheel-metadata/
+share/python-wheels/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+.python-version
+*.pyz
+
+# 依赖锁定文件要提交，这里只忽略导出缓存
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ---------- 3. 测试 / 类型检查 / 覆盖率 ----------
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+htmlcov/
+nosetests.xml
+junit*.xml
+
+# ---------- 4. 运行时产物、日志与本地数据 ----------
+logs/
+log/
+*.log
+*.pid
+*.pid.lock
+*.seed
+
+# 本地数据库与导出（含真实价格/评论快照，不入库）
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.dump
+*.sql.gz
+
+# 抓取缓存与向量/图本地库
+.cache/
+.cache_data/
+chroma/
+chroma_db/
+.qdrant/
+neo4j/data/
+neo4j/logs/
+neo4j/import/
+redis/*.rdb
+
+# 本地数据目录；演示数据请放 fixtures/ 并显式提交
+data/
+tmp/
+temp/
+.tmp/
+downloads/
+
+# ---------- 5. IDE / 编辑器 ----------
+# .idea 由各人本机维护，不入库（此前误提交的 .idea 已移除）
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+*.swp
+*.swo
+*~
+
+# ---------- 6. 操作系统 ----------
+.DS_Store
+.AppleDouble
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ---------- 7. Node 工具链（如后续接入 npm 前端）----------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.npm/
+.eslintcache
+*.tsbuildinfo
+dist-ssr/
+
+# ---------- 8. 临时与杂项 ----------
+*.tmp
+*.bak
+*.orig
+*.rej
+~$*
+*.crdownload
