@@ -27,7 +27,6 @@ def search_shopify(arguments:dict) -> list[dict]:
 def normalize_shopify_product(
     item: dict
 ) -> Product:
-
     # 图片
     media = item.get("media") or []
 
@@ -36,45 +35,36 @@ def normalize_shopify_product(
         if media
         else None
     )
-
     # 价格
     price_info = (
         item
         .get("price_range", {})
         .get("min", {})
     )
-
     amount = price_info.get("amount")
-
     price = (
         amount / 100
         if amount is not None
         else None
     )
-
     currency = price_info.get("currency")
-
     # variant
     variants = item.get("variants") or []
-
     variant = (
         variants[0]
         if variants
         else {}
     )
-
     # seller
     seller_info = (
         variant.get("seller")
         or {}
     )
-
     # rating
     rating_info = (
         item.get("rating")
         or {}
     )
-
     return Product(
         platform="shopify",
         product_id=item.get("id"),

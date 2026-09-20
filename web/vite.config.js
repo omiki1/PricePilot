@@ -14,6 +14,14 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+      // 聊天 SSE 接口：不代理的话 /chat 会被 vite 当成前端路由返回 index.html，
+      // EventSource 拿到 HTML 解析不出帧，页面表现就是"没有任何回应"
+      '/chat': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        // SSE 必须关闭压缩与缓冲，否则消息会被攒着不下发
+        headers: { 'Accept-Encoding': 'identity' },
+      },
       '/health': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
