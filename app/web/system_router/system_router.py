@@ -6,7 +6,7 @@ system_router = APIRouter(tags=['ops'])
 @system_router.get('/health')
 async def health(request: Request) -> dict:
     """健康检查：只报告装配情况，不暴露密钥与路径。"""
-    graph = getattr(request.app.state, 'shopping_graph', None)
+    graph = getattr(request.app.state, 'shopping_agent', None)
     return {
         'status': 'ok' if graph is not None else 'degraded',
         'components': {'graph': graph is not None},

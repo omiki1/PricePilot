@@ -1,4 +1,4 @@
-// 后端地址：开发时走 vite 代理（同源 /api），也可以用 VITE_API_BASE 直连后端。
+// 后端地址：开发时走 vite 代理（同源），也可以用 VITE_API_BASE 直连后端。
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 
 /** 健康检查：确认后端与图是否装配完成。 */
@@ -10,57 +10,50 @@ export async function fetchHealth() {
   return response.json()
 }
 
-/** 意图识别：只调用当前已完成的意图识别接口 POST /api/intent。 */
-export async function recognizeIntent({ question, userId, sessionId }) {
-  const response = await fetch(`${API_BASE}/api/intent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      question,
-      user_id: userId || 'default',
-      session_id: sessionId || '',
-    }),
-  })
-
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const detail = payload && payload.detail ? payload.detail : `请求失败（${response.status}）`
-    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
-  }
-  return payload
-}
-
 /**
- * 商品检索：跑一次图，返回意图识别文本 + 检索到的商品列表。
- * POST /api/products/search —— 只读 state["products"]，目前来源是 Shopify。
+ * 聊天：GET /chat?question=...&user_id=...&session_id=... （SSE 流式）
+ *
+ * 后端按顺序推三种帧：
+ *   {type: 'text',     data: '增量文本'}
+ *   {type: 'products', data: [Product...]}   ← 图状态里的检索结果
+ *   {done: true}                             ← 结束
+ *
+ * 用 EventSource（浏览器原生，自动处理分帧）。
  */
-export async function searchProducts({ question, userId, sessionId }) {
-  const response = await fetch(`${API_BASE}/api/products/search`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      question,
-      user_id: userId || 'default',
-      session_id: sessionId || '',
-    }),
+export function openChat({ question, userId, sessionId, onText, onProducts, onDone, onError }) {
+  const params = new URLSearchParams({
+    question,
+    user_id: userId || 'default',
+    session_id: sessionId || '',
   })
+  const source = new EventSource(`${API_BASE}/chat?${params.toString()}`)
 
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const detail = payload && payload.detail ? payload.detail : `请求失败（${response.status}）`
-    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
-  }
-  return payload
-}
+  source.onmessage = (event) => {
+    let payload = null
+    try {
+      payload = JSON.parse(event.data)
+    } catch (error) {
+      return
+    }
 
-/** 从后端返回的一句话里取出 category / price，仅用于展示，不参与业务判断。 */
-export function parseIntent(text) {
-  const categoryMatch = text.match(/商品类型[：:]\s*([^\s，,。]*)/)
-  const priceMatch = text.match(/价格在[：:]\s*([\d.]+)/)
-  const category = categoryMatch ? categoryMatch[1] : ''
-  const price = priceMatch ? priceMatch[1] : ''
-  return {
-    category: category || '未提到商品',
-    price: price ? String(Number(price)) : '未提到价格',
+    if (payload.done) {
+      source.close()
+      if (payload.data && onError) onError(payload.data)
+      if (onDone) onDone()
+      return
+    }
+    if (payload.type === 'text' && onText) {
+      onText(payload.data ?? '')
+    } else if (payload.type === 'products' && onProducts) {
+      onProducts(payload.data ?? [])
+    }
   }
+
+  source.onerror = () => {
+    // 连接关闭或出错：结束本轮；EventSource 的自动重连不需要（每轮都是新连接）
+    source.close()
+    if (onDone) onDone()
+  }
+
+  return source
 }

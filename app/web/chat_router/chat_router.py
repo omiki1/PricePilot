@@ -1,10 +1,10 @@
-
-
 import asyncio
 import json
-
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from langgraph.config import get_stream_writer
+
+from app.ai.agent.multi_agent.node.recommend_node import recommend_node as _recommend_node
 
 chat_router = APIRouter()
 
@@ -14,53 +14,67 @@ def sse(data: dict) -> str:
     return f'data: {json.dumps(data, ensure_ascii=False)}\n\n'
 
 
-@chat_router.get('/chat')
-async def chat(request: Request, question: str, user_id: str):
-    """聊天接口：接通多智能体出题流程，流式返回（SSE）。
+def _dump_products(raw) -> list[dict]:
+    """state 里是 Pydantic 的 Product，转成可 JSON 序列化的 dict。"""
+    items = []
+    for item in raw or []:
+        if hasattr(item, 'model_dump'):
+            items.append(item.model_dump())
+        elif isinstance(item, dict):
+            items.append(item)
+    return items
 
-    关于 session_id：ExamGraph 用 checkpointer 保存多轮状态，靠 thread_id 区分会话。
-    前端目前只传了 question 和 user_id，所以这里先用 user_id 当 thread_id
-    —— 即"同一个用户的多轮对话共享记忆"，正好满足"出题 → 答题 → 再出题"的循环。
-    将来前端支持多会话时，把 session_id 加成参数、这里优先用它即可。
+
+async def recommend_node(state):
+    """包一层：排名+取证跑完就立刻把商品帧写进流，前端不用等模型写完文字。
+
+    这样"商品卡片 3~5 秒可见、文字继续流式补"，总耗时不变但等待感大幅降低。
+    recommend_node 本体逻辑不改。
+    """
+    result = await _recommend_node(state)
+    try:
+        get_stream_writer()({'type': 'products', 'data': _dump_products(result.get('ranked_top'))})
+    except Exception as exc:
+        # 拿不到 writer（比如不在流式上下文里）不该影响主流程
+        print(f'推送商品帧失败: {exc}')
+    return result
+
+
+@chat_router.get('/chat')
+async def chat(request: Request, question: str, user_id: str, session_id: str = ''):
+    """聊天接口：接收用户输入 → 跑图 → SSE 流式输出。
+
+    帧类型：
+      {"type": "products", "data": [Product...]} 排名后的商品（recommend 跑完立刻推，约 3~5s）
+      {"type": "text",     "data": "..."}        模型生成的文字（随后流式补上）
+      {"done": true}                             结束标记
     """
     print(f'用户问题{question},用户ID:{user_id}')
-    exam_agent = request.app.state.exam_agent          # lifespan 里创建好的图
-    session_id = user_id or "default"                  # 同一用户共享记忆
+    shopping_agent = request.app.state.shopping_agent          # lifespan 里创建好的图
+    thread_id = session_id or user_id or "default"             # 会话隔离靠 thread_id
 
-    async def generate(question, user_id, session_id):
+    async def generate():
         try:
-            async for x in exam_agent.chat(question, user_id, session_id):
-                yield sse({'data': x, 'done': False})
+            async for x in shopping_agent.chat(question, user_id, thread_id):
+                # 商品帧和图内文本分开处理：商品帧不拼进正文
+                if isinstance(x, dict) and x.get('type') == 'products':
+                    if x.get('data'):
+                        yield sse({'type': 'products', 'data': x['data'], 'done': False})
+                    continue
+                yield sse({'type': 'text', 'data': x, 'done': False})
+
             yield sse({'data': '', 'done': True})
         except asyncio.CancelledError:
-            # 客户端断开（关页面/点停止），交给 Starlette 正常收尾
             raise
         except Exception as e:
             print(f'流式输出异常: {e}')
             yield sse({'data': f'服务器内部错误: {e}', 'done': True})
 
     return StreamingResponse(
-        generate(question, user_id, session_id),
+        generate(),
         media_type='text/event-stream',
         headers={
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
         },
     )
-
-
-# ---------------- 语音输入 ----------------
-@chat_router.websocket('/vosk')
-async def vosk(ws: WebSocket):
-    await ws.accept()
-    print("语音连接已建立")
-    try:
-        agent = get_vosk_agent()          # 懒加载（第一次会等模型加载）
-        await agent.speak(ws)             # 录音 + 识别 + 推送（识别到一句话即返回）
-        while True:
-            # 保持连接：识别完不等断开，等前端下次点语音时复用
-            await ws.receive_text()
-    except WebSocketDisconnect:
-        print("语音连接已断开")            # 正常断开，安静收尾
-    except Exception as e:
-        print(f"语音接口异常: {e}")
