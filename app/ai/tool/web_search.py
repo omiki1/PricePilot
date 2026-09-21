@@ -29,7 +29,9 @@ def make_query(text) -> str:
 
 def search_evidence(text, top_k: int = 9) -> list[dict]:
     """返回证据列表；失败或没结果返回空列表（调用方据此如实降级，不要编造）。"""
-    key = os.getenv('BAIDU_KEY')
+    # 兼容 BAIDU_KEY / BAIDU_API_KEY 两种写法：模板里叫 BAIDU_KEY，
+    # 少数机器上是 BAIDU_API_KEY，两边都认，不因为名字不同就静默不检索。
+    key = os.getenv('BAIDU_KEY') or os.getenv('BAIDU_API_KEY')
     if not key:
         return []
 
