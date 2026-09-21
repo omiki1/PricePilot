@@ -13,4 +13,5 @@ class ShoppingState(TypedDict):
     router: str
     ranked_top: list  # 排名后的商品（前 3 个带证据）；键名必须和节点读写一致，
     answer: dict
+    question: str
 

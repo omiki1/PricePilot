@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 class ShopifySearchInput(BaseModel):
     query: str
+    min_price: int | None = None
     max_price: int | None = None
 
 
@@ -8,7 +9,8 @@ class Product(BaseModel):
     platform: str
     product_id: str
     title: str
-    price: float | None = None
+    min_price: float | None = None
+    max_price: float | None = None
     currency: str | None = None
     image_url: str | None = None
     url: str | None = None
