@@ -4,7 +4,7 @@ from app.ai.agent.multi_agent.state.shopping_state import ShoppingState
 from app.ai.model import MyModel
 from app.ai.prompt.builder_prompt import BuilderPromptYaml
 from langchain_core.messages import AIMessage
-prompt = BuilderPromptYaml.get_prompt('intent_node.yaml')
+prompt = BuilderPromptYaml.get_prompt('intent_search_node.yaml')
 def intent_search_node(state:ShoppingState):
     user_input = state['messages'][-1].content
     model = MyModel.get_router_model()

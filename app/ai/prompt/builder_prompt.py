@@ -4,9 +4,6 @@ import yaml
 
 class BuilderPromptYaml:
     """把 YAML 提示词拼成一段文本。
-
-    约定：role 必填；task / rule / output / example / input 都是列表，缺哪节就跳过，
-    不再因为少写一个键把整个服务拖崩（之前 output_node.yaml 少个 example 就 KeyError）。
     """
 
     @staticmethod
@@ -48,4 +45,4 @@ class BuilderPromptYaml:
 
 if __name__ == '__main__':
     b = BuilderPromptYaml()
-    print(b.get_prompt('intent_node.yaml')[:200])
+    print(b.get_prompt('intent_search_node.yaml')[:200])

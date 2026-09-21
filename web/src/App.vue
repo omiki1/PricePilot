@@ -1,6 +1,7 @@
 <script setup>
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { fetchHealth, openChat } from './api.js'
+import { renderMarkdown } from './markdown.js'
 
 const userId = ref('u001')
 const sessionId = ref('s001')
@@ -15,10 +16,6 @@ const textareaRef = ref(null)
 const failedImages = reactive(new Set())
 
 const samples = [
-  '我想买一个500以内的无线机械键盘',
-  '15000以内的Ibanez电吉他',
-  '我想买一台游戏机',
-  '推荐个500块左右的显示器',
 ]
 
 // 后端目前会把全部候选一起推回来，这里把"有证据的"和"排前面的"当成推荐位
@@ -102,12 +99,36 @@ function useSample(text) {
 }
 
 function priceText(product) {
-  if (product.price === null || product.price === undefined) return '价格待确认'
-  return `${product.currency || ''} ${product.price}`.trim()
+  // 后端现在把价格拆成区间：min_price / max_price（流式商品帧与最终商品列表同名）。
+  // 旧字段 price 仅在单值场景下兜底，保证历史数据也能渲染。
+  const low = product.min_price ?? product.price
+  const high = product.max_price ?? product.price
+  if (low === null || low === undefined) {
+    if (high === null || high === undefined) return '价格待确认'
+    return `${product.currency || ''} ${high}`.trim()
+  }
+  if (high === null || high === undefined || high === low) {
+    return `${product.currency || ''} ${low}`.trim()
+  }
+  return `${product.currency || ''} ${low}~${high}`.trim()
 }
 
 function scoreText(product) {
   return product.score === null || product.score === undefined ? '' : `加权 ${product.score}`
+}
+
+// 只有走完 recommend 节点（排过序）的商品才断言"样本不足"；
+// 检索中途推送的卡片还没排序，缺评分不代表样本不足，那时不显示这句。
+function isRanked(product) {
+  return product.score !== undefined || product.rating_count !== undefined
+}
+
+function ratingText(product) {
+  if (typeof product.rating === 'number') {
+    const count = product.rating_count ? `（${product.rating_count}）` : ''
+    return `★ ${product.rating}${count}`
+  }
+  return isRanked(product) ? '评价样本不足' : ''
 }
 
 function imageFailed(product) {
@@ -174,7 +195,16 @@ onMounted(async () => {
               正在理解需求并检索商品…
             </div>
 
-            <div v-if="message.text" class="text">{{ message.text }}<span v-if="message.streaming" class="caret"></span></div>
+            <!-- 助手消息：走 Markdown 渲染。
+                 .md 会关掉 .text 的 white-space: pre-wrap —— 否则 v-html 生成的
+                 HTML 里那些标签之间的换行会被当成可见空行，排版全乱。 -->
+            <div v-if="message.text && message.role === 'assistant'" class="text md">
+              <div class="md-body" v-html="renderMarkdown(message.text)"></div>
+              <span v-if="message.streaming" class="caret"></span>
+            </div>
+
+            <!-- 用户消息：原样纯文本，不解析 Markdown（用户打的 "**" 就该显示 "**"） -->
+            <div v-else-if="message.text" class="text">{{ message.text }}</div>
 
             <!-- 推荐商品：带序号，和上面的文字一一对应 -->
             <section v-if="pickRecommended(message.products).length" class="picks">
@@ -207,20 +237,23 @@ onMounted(async () => {
                   <p class="pick-line">
                     <strong class="pick-price">{{ priceText(product) }}</strong>
                     <span v-if="scoreText(product)" class="pick-score">{{ scoreText(product) }}</span>
-                    <span v-if="typeof product.rating === 'number'" class="pick-rating">
-                      ★ {{ product.rating }}<template v-if="product.rating_count">（{{ product.rating_count }}）</template>
+                    <span
+                      v-if="ratingText(product)"
+                      class="pick-rating"
+                      :class="{ 'pick-norating': typeof product.rating !== 'number' }"
+                    >
+                      {{ ratingText(product) }}
                     </span>
                     <span v-if="product.available === true" class="pick-stock">有货</span>
                   </p>
 
                   <p class="pick-meta">{{ [product.seller, product.platform].filter(Boolean).join(' · ') }}</p>
 
-                  <!-- 证据：编号和文字里的 [S11] 对应 -->
+                  <!-- 证据列表 -->
                   <details v-if="(product.evidence || []).length" class="evidence">
-                    <summary>第三方证据 {{ product.evidence.length }} 条（对应正文里的编号）</summary>
+                    <summary>第三方证据 {{ product.evidence.length }} 条</summary>
                     <ul>
-                      <li v-for="item in product.evidence" :key="item.id || item.url">
-                        <span class="ev-id">[{{ item.id || 'S' }}]</span>
+                      <li v-for="item in product.evidence" :key="item.url || item.title">
                         <a v-if="item.url" :href="item.url" target="_blank" rel="noopener">{{ item.title || '来源' }}</a>
                         <span v-else>{{ item.title || '来源' }}</span>
                         <em v-if="item.site"> · {{ item.site }}</em>

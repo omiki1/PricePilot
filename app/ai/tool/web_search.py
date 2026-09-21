@@ -16,14 +16,12 @@ NOISE = ('wireless', 'mechanical', 'hot-swappable', 'rgb', 'backlit', 'gaming',
 
 
 def make_query(text) -> str:
-    """商品标题（或问题）→ 检索词。去掉营销词，并加上能引出负面信息的词。"""
-    # 兼容 Product 对象和字符串两种入参
-    raw = getattr(text, 'title', None) or str(text or '')
+    raw = getattr(text, 'title', None)
     core = re.sub(r'[\(（\[].*?[\)）\]]', ' ', raw)
     for word in NOISE:
         core = re.sub(rf'\b{re.escape(word)}\b', ' ', core, flags=re.I)
     core = ' '.join(core.split())[:60]
-    # 必须带"缺点/问题"这类词，只搜"评测"会拿到一堆软文
+    # 必须带"缺点/问题"这类词
     return f'{core} 评测 缺点 问题'
 
 
@@ -48,8 +46,6 @@ def search_evidence(text, top_k: int = 9) -> list[dict]:
             },
             timeout=20,
         )
-        response.raise_for_status()
-        # 没有 references 时用空列表兜底，否则下面 for 会 TypeError
         refs = response.json().get('references') or []
     except Exception as exc:
         print(f'搜索失败:{exc}')
@@ -60,11 +56,10 @@ def search_evidence(text, top_k: int = 9) -> list[dict]:
         if not isinstance(ref, dict):
             continue
         url = ref.get('url')
-        if not url or url in seen:      # 按 URL 去重
+        if not url or url in seen:
             continue
         seen.add(url)
 
-        # 取摘要正文（snippet 优先，没有再用 content），注意是字符串字段，不是整个 dict
         snippet = re.sub(r'\s+', ' ', (ref.get('snippet') or ref.get('content') or '')).strip()
         if not snippet:
             continue

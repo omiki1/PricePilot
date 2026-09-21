@@ -1,6 +1,12 @@
-from app.ai.agent.multi_agent.schema.adapter import map_state_to_shopify, build_shopify_arguments
+from app.ai.agent.multi_agent.schema.adapter import (
+    build_shopify_arguments,
+    filter_products_by_budget,
+    map_state_to_shopify,
+)
 from app.ai.agent.multi_agent.state.shopping_state import ShoppingState
-from app.ai.tool.search_shopify import search_shopify,normalize_shopify_products
+from app.ai.tool.search_shopify import search_shopify, normalize_shopify_products
+
+import sys
 
 
 def shopify_search_node(
@@ -22,7 +28,12 @@ def shopify_search_node(
     products = normalize_shopify_products(
         raw_products
     )
-    # 写回统一State
+    # 本地按预算复核：接口的 price 过滤只对 USD 有效，且 min+max 同发时
+    # max 会漏放，所以这里再筛一遍，保证"预算区间"是真的生效的。
+    products, report = filter_products_by_budget(
+        products,
+        shopify_input,
+    )
     return {
         "products": products
     }

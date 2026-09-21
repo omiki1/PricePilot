@@ -1,29 +1,43 @@
 from langchain_core.messages import HumanMessage
 from app.ai.agent.multi_agent.state.shopping_state import ShoppingState
-from app.ai.agent.multi_agent.node.intent_search_node import intent_search_node
+from app.ai.agent.multi_agent.node.intent_node import intent_node
 from langgraph.graph import StateGraph,START,END
 from app.ai.agent.multi_agent.node.shopify_search_node import shopify_search_node
 from app.ai.agent.multi_agent.node.output_node import output_node
-# 用 chat_router 里包了一层的版本：它在 recommend 跑完时立刻把商品帧写进流（前端 3~5s 就能看到卡片）
-from app.web.chat_router.chat_router import recommend_node
+from app.ai.agent.multi_agent.node.recommend_node import recommend_node
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from app.ai.agent.multi_agent.node.clarify_node import clarify_node
+from app.ai.agent.multi_agent.node.chat_node import chat_node
+USER_FACING_NODES = {'output'}
+def route_after_intent(state) -> str:
+    return state.get('router') or 'search'
+
 class ShoppingGraph:
     def __init__(self):
-        # 检查点必须实现 BaseCheckpointSaver；原先误用了 torch 的 checkpoint 函数。
-        self.memory = InMemorySaver()
+        self.serde = JsonPlusSerializer(allowed_msgpack_modules=True)
+        self.memory = InMemorySaver(serde=self.serde)
         self.agent = self.get_agent()
     def get_agent(self):
         graph = StateGraph(ShoppingState)
-        #添加节点
-        graph.add_node("intent",intent_search_node)
+        graph.add_node("intent",intent_node)
         graph.add_node("shopify_search",shopify_search_node)
         graph.add_node("recommend", recommend_node)
         graph.add_node("output", output_node)
+        graph.add_node('chat', chat_node)
+        graph.add_node('clarify', clarify_node)
         graph.add_edge(START,'intent')
-        graph.add_edge('intent','shopify_search')
+        graph.add_conditional_edges('intent', route_after_intent, {
+            'search': 'shopify_search',
+            'clarify': 'clarify',
+            'chat': 'chat',
+            'reject': 'clarify',
+        })
         graph.add_edge('shopify_search', 'recommend')
         graph.add_edge('recommend', 'output')
         graph.add_edge('output', END)
+        graph.add_edge('chat', END)
+        graph.add_edge('clarify', END)
         self.agent = graph.compile(checkpointer=self.memory)
         return self.agent
     async def chat(self,question,user_id,session_id):
@@ -37,5 +51,4 @@ class ShoppingGraph:
                 if messages.content:
                     yield messages.content
             elif mode == "custom":
-                # 节点主动推的事件（目前只有商品帧），原样交给上层
                 yield data

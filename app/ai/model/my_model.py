@@ -21,6 +21,8 @@ def pick_key(base_url: str, explicit: str | None) -> tuple[str, str]:
     host = (base_url or '').lower()
     if 'bigmodel' in host or 'zhipu' in host:
         return os.getenv('GLM_API_KEY') or '', 'GLM_API_KEY（智谱）'
+    if 'commandcode' in host:
+        return os.getenv('COMMANDCODE_API_KEY') or '', 'COMMANDCODE_API_KEY（CommandCode）'
     return (
         os.getenv('DEEPSEEK_API_KEY') or os.getenv('ANTHROPIC_API_KEY') or '',
         'DEEPSEEK_API_KEY / ANTHROPIC_API_KEY（DeepSeek）',
@@ -58,7 +60,6 @@ class MyModel:
     _router_model = None
     _vosk_model = None
 
-    # ---------------- 在线模型 ----------------
     @staticmethod
     def get_model():
         if MyModel._model is None:
@@ -110,28 +111,15 @@ class MyModel:
         return MyModel._router_model
 
     @staticmethod
-    def get_vosk_model():
-        if MyModel._vosk_model is None:
-            model_path = os.getenv('VOSK_PATH')
-        from vosk import Model
-        MyModel._vosk_model = Model(model_path=model_path)
-        return MyModel._vosk_model
+    def get_think_model():
+        if MyModel._router_model is None:
+            MyModel._router_model = ChatOpenAI(
+                model=ROUTER_MODEL_NAME,
+                api_key=ROUTER_MODEL_API_KEY,
+                base_url=ROUTER_MODEL_BASE_URL,
+                streaming=False,
+            )
+        return MyModel._router_model
 
 
-def describe() -> str:
-    """打印当前生效的模型配置（凭证只显示有没有配、来自哪个变量，不显示值）。"""
-    main_key = f'已配置（{MAIN_KEY_SOURCE}）' if MAIN_MODEL_API_KEY else '缺失'
-    router_key = f'已配置（{ROUTER_KEY_SOURCE}）' if ROUTER_MODEL_API_KEY else '缺失'
-    return (
-        f'main:   model={MAIN_MODEL_NAME} base_url={MAIN_MODEL_BASE_URL} 凭证={main_key}\n'
-        f'router: model={ROUTER_MODEL_NAME} base_url={ROUTER_MODEL_BASE_URL} 凭证={router_key}'
-    )
 
-
-if __name__ == '__main__':
-    print(describe())
-    model = MyModel.get_model()
-    for chunk in model.stream('天空为什么是蓝色'):
-        if chunk.content:
-            print(chunk.content, end='', flush=True)
-    print()

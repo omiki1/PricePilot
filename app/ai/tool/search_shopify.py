@@ -36,31 +36,37 @@ def normalize_shopify_product(
         else None
     )
     # 价格
-    price_info = (
-        item
-        .get("price_range", {})
-        .get("min", {})
-    )
-    amount = price_info.get("amount")
-    price = (
-        amount / 100
-        if amount is not None
+    price_range = item.get("price_range") or {}
+    min_price_info = price_range.get("min") or {}
+    max_price_info = price_range.get("max") or {}
+
+    min_amount = min_price_info.get("amount")
+    max_amount = max_price_info.get("amount")
+    min_price = (
+        min_amount / 100
+        if min_amount is not None
         else None
     )
-    currency = price_info.get("currency")
-    # variant
+
+    max_price = (
+        max_amount / 100
+        if max_amount is not None
+        else None
+    )
+    currency = (
+            min_price_info.get("currency")
+            or max_price_info.get("currency")
+    )
     variants = item.get("variants") or []
     variant = (
         variants[0]
         if variants
         else {}
     )
-    # seller
     seller_info = (
         variant.get("seller")
         or {}
     )
-    # rating
     rating_info = (
         item.get("rating")
         or {}
@@ -69,7 +75,8 @@ def normalize_shopify_product(
         platform="shopify",
         product_id=item.get("id"),
         title=item.get("title", ""),
-        price=price,
+        min_price=min_price,
+        max_price=max_price,
         currency=currency,
         image_url=image_url,
         url=variant.get("url"),
