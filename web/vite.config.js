@@ -1,8 +1,13 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-// 前后端分离：前端固定跑 8080，后端跑 8081。
-// （后端不用 8000：本机 7936-8035 是 Windows 给 Hyper-V/WSL 的保留段，绑不上）
+// 前后端分离：前端固定跑 8080，后端跑 8000（和 app/main.py 的 uvicorn port 保持一致）。
+//
+// 原注释写的是后端用 8081，理由是"8000 落在 Windows 给 Hyper-V/WSL 的保留段"。
+// 但本机实测：8000 能正常绑定（后端就跑在上面），8081 反而没人监听，
+// 结果四条代理全部 ECONNREFUSED、页面发出去没有任何回应。所以对齐到 8000。
+//
+// 改 main.py 的端口时，记得同步改这里 —— 两处对不上就会静默连不上。
 //
 // 所有代理必须指向同一个后端：之前 /chat 指 8000、/api 和 /health 指 8081，
 // 结果聊天永远连不上，页面表现就是"发出去没有任何回应"。
@@ -10,7 +15,7 @@ import vue from '@vitejs/plugin-vue'
 // 加了后端新路由（比如 /user/*）记得同步加一条代理 ——
 // 漏了不会报"没配代理"，而是被 vite 当成前端路由返回 index.html，
 // 前端拿到的是 HTML、JSON.parse 直接炸，很难一眼看出是代理问题。
-const BACKEND = 'http://127.0.0.1:8081'
+const BACKEND = 'http://127.0.0.1:8000'
 
 export default defineConfig({
   plugins: [vue()],

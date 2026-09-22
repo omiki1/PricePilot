@@ -6,8 +6,6 @@ from app.ai.agent.multi_agent.schema.adapter import (
 from app.ai.agent.multi_agent.state.shopping_state import ShoppingState
 from app.ai.tool.search_shopify import search_shopify, normalize_shopify_products
 
-import sys
-
 
 def shopify_search_node(
         state: ShoppingState
