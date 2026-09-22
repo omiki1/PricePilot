@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from app.web.chat_router import chat_router
 from app.web.system_router import system_router
-from app.ai.agent.multi_agent.node.graph.shopping_graph import ShoppingGraph
+from app.ai.agent.multi_agent.graph.shopping_graph import ShoppingGraph
 @asynccontextmanager
 async def content_manager(app:FastAPI):
     print("模型配置：")

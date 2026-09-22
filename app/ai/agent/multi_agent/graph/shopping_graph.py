@@ -6,7 +6,7 @@ from app.ai.agent.multi_agent.node.shopify_search_node import shopify_search_nod
 from app.ai.agent.multi_agent.node.output_node import output_node
 # 用 chat_router 里包了一层的版本：它在 recommend 跑完时立刻把商品帧写进流
 # （前端 3~5s 就能看到卡片）
-from app.web.chat_router.chat_router import recommend_node
+from app.ai.agent.multi_agent.node.recommend_node import recommend_node
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
