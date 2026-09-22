@@ -25,7 +25,6 @@ favorite_router = APIRouter(tags=['favorites'])
 
 
 def _fail(exc) -> HTTPException:
-    """仓储层的可预期失败：连不上库/表不存在算 503，商品字段有问题算 400。"""
     message = str(exc)
     status = 400 if message.startswith('商品') or '不是合法数字' in message else 503
     return HTTPException(status_code=status, detail=message)
