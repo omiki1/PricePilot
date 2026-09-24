@@ -112,6 +112,11 @@ function useSample(text) {
 }
 
 function priceText(product) {
+  // ── [B 修改 2026-09-24] 优先用后端给的人民币展示串 ──
+  // 后端现在会下发 price_text，形如「USD 56.98 / 人民币 ≈ ¥383.06」，
+  // 汇率口径由后端统一掌握（见 app/ai/tool/currency.py），前端不再自己换算。
+  // 没有该字段时（旧数据 / 其他数据源）退回下面按 min/max 拼装的老逻辑。
+  if (product.price_text) return product.price_text
   // 后端现在把价格拆成区间：min_price / max_price（流式商品帧与最终商品列表同名）。
   // 旧字段 price 仅在单值场景下兜底，保证历史数据也能渲染。
   const low = product.min_price ?? product.price
