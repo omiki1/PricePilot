@@ -3,6 +3,10 @@ class ShopifySearchInput(BaseModel):
     query: str
     min_price: int | None = None
     max_price: int | None = None
+    # ── [B 修改 2026-09-24] 定性价格偏好（'' / cheap / premium）────────────
+    # max_price 只能表达"有多少钱"，表达不了"想买便宜的"。
+    # 没有数字预算时它是唯一的省钱信号，交给 filter_products_by_budget 做相对收窄。
+    price_pref: str = ''
 
 
 class Product(BaseModel):

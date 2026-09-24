@@ -43,6 +43,4 @@ class BuilderPromptYaml:
         return prompt.strip()
 
 
-if __name__ == '__main__':
-    b = BuilderPromptYaml()
-    print(b.get_prompt('intent_search_node.yaml')[:200])
+

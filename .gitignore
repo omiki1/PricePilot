@@ -100,6 +100,8 @@ log/
 .cache_data/
 chroma/
 chroma_db/
+# chroma_data/ 是本机向量库运行时目录（记忆模块 L3），绝不能提交
+chroma_data/
 .qdrant/
 neo4j/data/
 neo4j/logs/
