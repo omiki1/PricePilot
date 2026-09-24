@@ -1,12 +1,25 @@
 <script setup>
 import { nextTick, onMounted, reactive, ref } from 'vue'
-import { fetchHealth, openChat } from './api.js'
+import {
+  addFavorite,
+  fetchFavorites,
+  fetchHealth,
+  openChat,
+  removeFavorite,
+} from './api.js'
 import { renderMarkdown } from './markdown.js'
 
 const userId = ref('u001')
 const sessionId = ref('s001')
 const input = ref('')
 const showSettings = ref(false)
+
+// ---- 收藏 ----
+// showFavorites 这个名字来自 style.css 的注释：收藏栏只在它为真时渲染，不占位
+const showFavorites = ref(false)
+const favorites = ref([])
+const favError = ref('')
+const favBusy = ref('') // 正在操作的商品 ID：期间禁用按钮，防连点
 
 const messages = ref([])          // {role, text, products, streaming, error, showAll}
 const sending = ref(false)
@@ -144,12 +157,84 @@ function markImageFailed(product) {
   failedImages.add(product.product_id)
 }
 
+// ---------- 收藏 ----------
+
+/** 商品卡上的按钮要知道这一条收藏了没有。收藏夹最多 100 条，直接找就够快。 */
+function isFavorited(productId) {
+  return favorites.value.some((item) => item.product_id === productId)
+}
+
+/**
+ * 商品 → 收藏接口要的载荷。
+ *
+ * 后端 FavoriteProduct 只认这几个字段（model_config extra="ignore"，多余的自动丢），
+ * 但 price 必须是数字：后端把价格拆成了 min_price / max_price 区间，
+ * 取不到时退回旧字段 price，都没有就传 null（后端允许）。
+ */
+function favoritePayload(product) {
+  let price = null
+  if (typeof product.min_price === 'number') price = product.min_price
+  else if (typeof product.price === 'number') price = product.price
+  return {
+    product_id: product.product_id,
+    title: product.title || '',
+    image_url: product.image_url || null,
+    product_url: product.product_url || product.url || null,
+    price,
+  }
+}
+
+async function loadFavorites() {
+  favError.value = ''
+  try {
+    const data = await fetchFavorites({ userId: userId.value })
+    favorites.value = data.favorites || []
+  } catch (error) {
+    favError.value = error.message || '收藏夹加载失败'
+  }
+}
+
+/** 卡片按钮：没收藏就收藏，已收藏就取消。两个方向都靠 isFavorited 判断。 */
+async function toggleFavorite(product) {
+  const id = product.product_id
+  if (!id || favBusy.value) return
+  favBusy.value = id
+  favError.value = ''
+  try {
+    if (isFavorited(id)) {
+      await removeFavorite({ userId: userId.value, productId: id })
+    } else {
+      await addFavorite({ userId: userId.value, product: favoritePayload(product) })
+    }
+    await loadFavorites()
+  } catch (error) {
+    favError.value = error.message || '操作失败'
+  } finally {
+    favBusy.value = ''
+  }
+}
+
+function removeFavoriteItem(item) {
+  return toggleFavorite({ product_id: item.product_id })
+}
+
+function toggleFavorites() {
+  if (showFavorites.value) {
+    showFavorites.value = false
+    return
+  }
+  showFavorites.value = true
+  loadFavorites()
+}
+
 onMounted(async () => {
   try {
     health.value = await fetchHealth()
   } catch (exception) {
     health.value = { status: 'unreachable', error: exception.message }
   }
+  // 进页面就把收藏夹拉下来：卡片上的按钮靠它决定显示"收藏"还是"已收藏"
+  loadFavorites()
   textareaRef.value?.focus()
 })
 </script>
@@ -165,6 +250,9 @@ onMounted(async () => {
         <span class="badge" :class="health && health.status === 'ok' ? 'badge-ok' : 'badge-bad'">
           后端{{ health ? (health.status === 'ok' ? '正常' : health.status) : '检测中' }}
         </span>
+        <button class="settings-toggle" type="button" @click="toggleFavorites">
+          {{ showFavorites ? '收起收藏夹' : '收藏夹' }}{{ favorites.length ? ` ${favorites.length}` : '' }}
+        </button>
         <button class="settings-toggle" type="button" @click="showSettings = !showSettings">
           {{ showSettings ? '收起设置' : '会话设置' }}
         </button>
@@ -182,7 +270,57 @@ onMounted(async () => {
       </label>
     </div>
 
-    <div ref="scrollRef" class="scroll">
+    <!-- 聊天区与收藏栏并排：.main 是 flex 容器，收藏栏在左（CSS 里是 border-right） -->
+    <div class="main">
+      <aside v-if="showFavorites" class="fav-side">
+        <div class="fav-side-head">
+          <h3>收藏夹{{ favorites.length ? `（${favorites.length}）` : '' }}</h3>
+          <button class="fav-side-close" type="button" title="收起" @click="showFavorites = false">×</button>
+        </div>
+
+        <p v-if="favError" class="fav-side-error">{{ favError }}</p>
+
+        <div v-if="!favorites.length" class="fav-side-hint">
+          <p>还没有收藏。在商品卡上点「收藏」，这里就会出现。</p>
+        </div>
+
+        <div v-else class="fav-side-list">
+          <div v-for="item in favorites" :key="item.id" class="fav-side-item">
+            <div class="fav-side-thumb">
+              <img
+                v-if="item.image_url && !failedImages.has(item.product_id)"
+                :src="item.image_url"
+                :alt="item.title"
+                loading="lazy"
+                @error="failedImages.add(item.product_id)"
+              />
+              <span v-else>无图</span>
+            </div>
+
+            <div class="fav-side-info">
+              <div class="fav-side-title" :title="item.title">{{ item.title || '未命名商品' }}</div>
+              <div class="fav-side-line">
+                <span class="fav-side-price">{{ item.price || '价格未知' }}</span>
+                <span class="fav-side-time">{{ (item.time || '').slice(0, 10) }}</span>
+              </div>
+            </div>
+
+            <div class="fav-side-actions">
+              <a v-if="item.product_url" :href="item.product_url" target="_blank" rel="noopener">商品页</a>
+              <button
+                class="fav-side-remove"
+                type="button"
+                :disabled="favBusy === item.product_id"
+                @click="removeFavoriteItem(item)"
+              >
+                移除
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <div ref="scrollRef" class="scroll">
       <div class="thread">
         <div v-if="!messages.length" class="empty">
           <h2>想买点什么？</h2>
@@ -197,7 +335,7 @@ onMounted(async () => {
 
             <div v-if="message.role === 'assistant' && !message.text && message.streaming" class="thinking">
               <span class="dots"><span></span><span></span><span></span></span>
-              正在理解需求并检索商品…
+              正在思考…
             </div>
 
             <!-- 助手消息：走 Markdown 渲染。
@@ -237,7 +375,18 @@ onMounted(async () => {
                 </div>
 
                 <div class="pick-info">
-                  <h3 class="pick-title" :title="product.title">{{ product.title }}</h3>
+                  <div class="pick-head">
+                    <h3 class="pick-title" :title="product.title">{{ product.title }}</h3>
+                    <button
+                      class="fav-btn"
+                      :class="{ 'fav-btn-on': isFavorited(product.product_id) }"
+                      type="button"
+                      :disabled="favBusy === product.product_id"
+                      @click="toggleFavorite(product)"
+                    >
+                      {{ isFavorited(product.product_id) ? '已收藏' : '收藏' }}
+                    </button>
+                  </div>
 
                   <p class="pick-line">
                     <strong class="pick-price">{{ priceText(product) }}</strong>
@@ -301,7 +450,18 @@ onMounted(async () => {
                       </span>
                       <span v-if="product.available === true" class="tag-in">有货</span>
                     </p>
-                    <a v-if="product.url" :href="product.url" target="_blank" rel="noopener">查看商品页 →</a>
+                    <div class="card-foot">
+                      <a v-if="product.url" :href="product.url" target="_blank" rel="noopener">查看商品页 →</a>
+                      <button
+                        class="fav-btn fav-btn-sm"
+                        :class="{ 'fav-btn-on': isFavorited(product.product_id) }"
+                        type="button"
+                        :disabled="favBusy === product.product_id"
+                        @click="toggleFavorite(product)"
+                      >
+                        {{ isFavorited(product.product_id) ? '已收藏' : '收藏' }}
+                      </button>
+                    </div>
                   </div>
                 </article>
               </div>
@@ -311,6 +471,7 @@ onMounted(async () => {
           </div>
         </div>
       </div>
+    </div>
     </div>
 
     <div class="composer-wrap">

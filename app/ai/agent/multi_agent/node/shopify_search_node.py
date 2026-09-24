@@ -10,8 +10,6 @@ from app.ai.tool.search_shopify import (
     search_shopify,
 )
 
-import sys
-
 
 def shopify_search_node(
         state: ShoppingState
