@@ -1,7 +1,22 @@
 from app.ai.agent.multi_agent.schema.shopping_schema import ShopifySearchInput
 from app.ai.agent.multi_agent.state.shopping_state import ShoppingState
 
-BUDGET_MIN_RATIO = 0.1
+# ── [B 修改 2026-09-23] 0.1 → 0 ─────────────────────────────────────────
+# 原值 0.1 把"预算"解释成区间 [上限×0.9, 上限]：预算 1000 元 → 只保留 900~1000 元的商品。
+# 但用户说的是"1000 以内"，语义是**上限**，不是"这个价位附近的区间"。
+#
+# 实测（category='Wuthering Waves merchandise'、预算 1000）：
+#   MCP 按 ≤上限 返回 50 条，实际价格 ¥81~¥763，
+#   本地复核把这 50 条**全部**判为"低于下限"丢弃 → 候选 0 条
+#   → recommend 无候选 → output 按提示词规则输出空字符串 → 前端显示 ""
+# 而且 API 侧只发 max（见 build_shopify_arguments），本地却按区间卡，
+# 两套标准不一致，最后是本地这套更严的把结果全杀了。
+#
+# 置 0 后走本函数下面的 `if BUDGET_MIN_RATIO <= 0: return None, max_cents` 分支，
+# 只保上限，与 API 侧一致。
+# 若将来确实想要"差不多这个价位"的语义，应当在 intent 里识别"大概/左右/上下"
+# 再按查询启用，而不是对所有查询一刀切。
+BUDGET_MIN_RATIO = 0
 CNY_PER_USD = 6.75
 
 # 折算用固定汇率：1 单位外币 = ? 人民币。查不到的外币不参与区间比较。
@@ -51,6 +66,7 @@ def map_state_to_shopify(
         query=state["category"],
         max_price=max_price,
         min_price=min_price,
+        price_pref=(state.get("price_pref") or "").strip().lower(),
     )
 
 
@@ -94,7 +110,39 @@ def _to_cny(amount: float | None, currency: str | None) -> float | None:
     return amount * rate
 
 
-def filter_products_by_budget(
+# ── [B 修改 2026-09-24] 「便宜」这类定性偏好的相对收窄 ──────────────────────
+# 不发明绝对价格（"便宜"对耳机是 100 元、对笔记本是 3000 元），而是在**本次候选集内部**
+# 按相对价位收窄：只保留最便宜的那一半。这样既让"便宜"真的生效，
+# 又不需要为每个品类维护一张价格表。
+CHEAP_KEEP_RATIO = 0.5
+
+
+def _keep_cheaper_half(products: list) -> tuple[list, dict]:
+    """「便宜」时只留候选里价格最低的 CHEAP_KEEP_RATIO 那一档。
+
+    阈值取候选价格的中位数（跨币种统一折成人民币再比），≤ 阈值的保留。
+    换算不出人民币的（汇率表里没有的币种）沿用本文件一贯策略：原样保留并计数，
+    不因为算不出价就丢掉商品。
+    """
+    if len(products) < 2:
+        return products, {"cheap_kept": len(products), "cheap_dropped": 0,
+                          "cheap_ceil_cny": None}
+    priced = [(p, _to_cny(p.min_price, p.currency)) for p in products]
+    known = sorted(cny for _, cny in priced if cny is not None)
+    if len(known) < 2:
+        return products, {"cheap_kept": len(products), "cheap_dropped": 0,
+                          "cheap_ceil_cny": None}
+    index = max(0, int(len(known) * CHEAP_KEEP_RATIO) - 1)
+    threshold = known[index]
+    kept = [p for p, cny in priced if cny is None or cny <= threshold]
+    return kept, {
+        "cheap_kept": len(kept),
+        "cheap_dropped": len(products) - len(kept),
+        "cheap_ceil_cny": round(threshold),
+    }
+
+
+def _filter_by_max_price(
     products: list,
     input_data: ShopifySearchInput
 ) -> tuple[list, dict]:
@@ -138,3 +186,22 @@ def filter_products_by_budget(
         "floor_cny": round(low_cny) if low_cny else None,
         "ceil_cny": round(high_cny),
     }
+
+
+def filter_products_by_budget(
+    products: list,
+    input_data: ShopifySearchInput
+) -> tuple[list, dict]:
+    """本地复核：先按预算上限筛，再按定性偏好（便宜）相对收窄。
+
+    ── [B 修改 2026-09-24] ──
+    原来只处理 max_price。用户说「便宜的秋季外套」时 max_price 是 None，
+    整个函数原样放行 → 排序器（bayes_rank）只看评分不看价格 → 推出来
+    全是 ¥1095~¥2682 的贵货，"便宜"两个字等于没说。
+    现在 price_pref='cheap' 时在候选集内再收一道（见 _keep_cheaper_half）。
+    """
+    products, report = _filter_by_max_price(products, input_data)
+    if input_data.price_pref == "cheap":
+        products, cheap_report = _keep_cheaper_half(products)
+        report.update(cheap_report)
+    return products, report
