@@ -1,11 +1,11 @@
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage  # [B 修改 2026-09-23] 还原对话轮次用
 from app.ai.agent.multi_agent.schema.intent_schema import IntentSchema
-from pydantic import BaseModel,Field
 from app.ai.agent.multi_agent.state.shopping_state import ShoppingState
 from app.ai.model import MyModel
 from app.ai.prompt.builder_prompt import BuilderPromptYaml
 from app.ai.tool.jev_router import should_clarify
+
 prompt = BuilderPromptYaml.get_prompt('intent_node.yaml')
 
 CHEAP_WORDS = ('cheap', 'low', 'budget', '便宜', '平价', '实惠')
@@ -33,6 +33,8 @@ def verify_clarify(user_input: str, fallback: str) -> str:
         return fallback
     print('[intent] Jev 推翻了追问，改成 search')
     return 'search'
+
+
 # ── [B 修改 2026-09-23] 追问后补充时，把上一轮对话原文一起喂给 intent ──────────
 # 原来的问题：`已知条件` 只带 state 里的结构化字段（category / price），但追问场景下
 # 模型按提示词规则把 category 填成了 ""（"没提到商品，或 router 是 clarify 时 category 填 ''"），
@@ -126,26 +128,26 @@ def build_intent_input(state: ShoppingState, user_input: str) -> str:
     parts.append(TOPIC_SWITCH_RULE)
     return '\n'.join(parts)
 
+
 def intent_node(state: ShoppingState):
     user_input = state['messages'][-1].content
     model = MyModel.get_router_model()
     agent = create_agent(model=model, system_prompt=prompt, response_format=IntentSchema)
     content = build_intent_input(state, user_input)
-    rs = agent.invoke({'messages': [{'role': 'user', 'content':content}]})
+    rs = agent.invoke({'messages': [{'role': 'user', 'content': content}]})
     data = rs['structured_response'].model_dump()
     router = data['router']
-    # ── [B 修改 2026-09-23] 抽不到检索词时不允许推翻追问 ──────────────────
-    # 原来的写法是「只要是 clarify 就交给 Jev 复核」，Jev 说不用追问就改成 search。
-    # 但模型有时会给出 router=clarify 且 category=''（把话术写进 question），
-    # 这时改成 search 就变成**拿空串去检索**，而 Shopify catalog 对任何 query
-    # 都会返回 50 条（实测：'鸣潮' → 中药 Rhizoma，中文长句 → 一本讲鸡的书），
-    # 结果就是推一堆毫不相关的商品，比追问更糟。
-    # 所以只有确实抽到可用检索词时才让 Jev 推翻。
+    # ── [B 修改 2026-09-23；并入 master 收口] 抽不到检索词就不许改成 search ──
+    # 原写法「只要是 clarify 就交给 Jev 复核」有漏洞：模型有时给出 router=clarify
+    # 且 category=''（把话术写进 question），Jev 推翻后变成**拿空串去检索**，
+    # 而 Shopify catalog 对任何 query 都返 50 条（实测 '鸣潮' → 中药 Rhizoma，
+    # 中文长句 → 一本讲鸡的书），推一堆不相关商品，比追问更糟。
+    # 收口：Jev 推翻成 search 后若仍无检索词，退回追问。
     if router == 'clarify':
-        if (data.get('category') or '').strip():
-            router = verify_clarify(user_input, router)
-        else:
-            print('[intent] category 为空，保留追问（Jev 的推翻被忽略）')
+        router = verify_clarify(user_input, router)
+        if router == 'search' and not (data.get('category') or '').strip():
+            print('[intent] Jev 改成 search 但没有检索词，仍走追问')
+            router = 'clarify'
     # ── [B 修改 2026-09-24] 定性价格偏好归一化 ──────────────────────────────
     # 模型可能给出 'cheap' / '便宜' / 'low' 等写法，统一收敛到 '', cheap, premium，
     # 免得下游 adapter 因为一个拼写差异就当没识别到。
@@ -157,10 +159,13 @@ def intent_node(state: ShoppingState):
           f"price={data['price']} price_pref={price_pref!r} question={data['question']!r}",
           flush=True)
 
-    return {
+    out = {
         'router': router,
-        'category': data['category'],
-        'price': data['price'],
         'price_pref': price_pref,
         'question': data['question'] if router in ('clarify', 'reject') else '',
     }
+    # 闲聊/拒绝不覆盖上一轮的品类和预算，下一轮检索还用得上
+    if router in ('search', 'clarify'):
+        out['category'] = data['category']
+        out['price'] = data['price']
+    return out
