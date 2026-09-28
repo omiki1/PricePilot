@@ -4,12 +4,31 @@ import {
   addFavorite,
   fetchFavorites,
   fetchHealth,
+  fetchPriceHistory,
   openChat,
   removeFavorite,
 } from './api.js'
 import { renderMarkdown } from './markdown.js'
+import LoginView from './LoginView.vue'
 
-const userId = ref('u001')
+// ---- 登录态 ----
+// 存 localStorage，刷新页面不用重登。
+// 这只是"记住你是谁"，不是安全凭证 —— 后端接口目前仍接受前端传的 user_id。
+const USER_KEY = 'pricepilot.user'
+
+function loadStoredUser() {
+  try {
+    const raw = localStorage.getItem(USER_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch (exception) {
+    // localStorage 被禁用（隐私模式）或内容损坏，当未登录处理
+    return null
+  }
+}
+
+const currentUser = ref(loadStoredUser())
+// 登录后 userId 用后端的 user_id（收藏归属跟着账号走）；未登录时用占位值
+const userId = ref(currentUser.value ? String(currentUser.value.user_id) : 'u001')
 const sessionId = ref('s001')
 const input = ref('')
 const showSettings = ref(false)
@@ -20,6 +39,10 @@ const showFavorites = ref(false)
 const favorites = ref([])
 const favError = ref('')
 const favBusy = ref('') // 正在操作的商品 ID：期间禁用按钮，防连点
+
+// 价格记录：点「价格记录」才去查，不在收藏列表里预加载。
+// 一次只展开一个商品，key 是 product_id，值是 { collapsed, loading, error, points }。
+const pricePanels = reactive({})
 
 const messages = ref([])          // {role, text, products, streaming, error, showAll}
 const sending = ref(false)
@@ -218,6 +241,46 @@ function removeFavoriteItem(item) {
   return toggleFavorite({ product_id: item.product_id })
 }
 
+// ---------- 价格记录 ----------
+
+function pricePanel(item) {
+  return pricePanels[item.product_id] || null
+}
+
+/** 点「价格记录」：展开并拉数据；再点收起。查过的直接展开，不重复请求。 */
+async function togglePricePanel(item) {
+  const productId = item.product_id
+  const current = pricePanels[productId]
+
+  if (current && !current.collapsed) {
+    current.collapsed = true
+    return
+  }
+  if (current && current.points) {   // 之前查过，直接展开
+    current.collapsed = false
+    return
+  }
+
+  pricePanels[productId] = { collapsed: false, loading: true, error: '', points: [] }
+  try {
+    const data = await fetchPriceHistory({ productId })
+    pricePanels[productId] = {
+      collapsed: false, loading: false, error: '', points: data.points || [],
+    }
+  } catch (error) {
+    pricePanels[productId] = {
+      collapsed: false, loading: false, error: error.message || '价格记录读取失败', points: [],
+    }
+  }
+}
+
+/** 价格点的记录时刻：后端给的是 UTC ISO 串，转成本地可读。 */
+function pointTime(point) {
+  const parsed = new Date(point.recorded_at)
+  if (Number.isNaN(parsed.getTime())) return point.recorded_at || ''
+  return parsed.toLocaleString('zh-CN', { hour12: false })
+}
+
 function toggleFavorites() {
   if (showFavorites.value) {
     showFavorites.value = false
@@ -233,14 +296,53 @@ onMounted(async () => {
   } catch (exception) {
     health.value = { status: 'unreachable', error: exception.message }
   }
-  // 进页面就把收藏夹拉下来：卡片上的按钮靠它决定显示"收藏"还是"已收藏"
-  loadFavorites()
+  // 已登录才拉收藏：未登录时收藏接口拿不到 user_id，拉了也是空的
+  if (currentUser.value) {
+    loadFavorites()
+  }
   textareaRef.value?.focus()
 })
+
+// ---- 登录 / 退出 ----
+async function onLoggedIn(user) {
+  currentUser.value = user || null
+  if (user && user.user_id !== undefined && user.user_id !== null) {
+    userId.value = String(user.user_id)
+  }
+  try {
+    localStorage.setItem(USER_KEY, JSON.stringify(currentUser.value))
+  } catch (exception) {
+    // 隐私模式下写不了，不影响本次登录
+  }
+  // 换账号了：清掉上一个用户的痕迹，再拉这个账号的收藏
+  messages.value = []
+  favorites.value = []
+  favError.value = ''
+  loadFavorites()
+  nextTick(() => textareaRef.value?.focus())
+}
+
+function logout() {
+  currentUser.value = null
+  try {
+    localStorage.removeItem(USER_KEY)
+  } catch (exception) {
+    // 同上
+  }
+  userId.value = 'u001'
+  messages.value = []
+  favorites.value = []
+  favError.value = ''
+  showFavorites.value = false
+}
 </script>
 
 <template>
-  <div class="page">
+  <!-- 未登录：只有登录页，看不到聊天界面 -->
+  <LoginView v-if="!currentUser" @logged-in="onLoggedIn" />
+
+  <!-- 已登录：聊天主界面 -->
+  <div v-else class="page">
     <header class="topbar">
       <div class="brand">
         <h1>PricePilot</h1>
@@ -256,13 +358,21 @@ onMounted(async () => {
         <button class="settings-toggle" type="button" @click="showSettings = !showSettings">
           {{ showSettings ? '收起设置' : '会话设置' }}
         </button>
+        <button
+          class="settings-toggle"
+          type="button"
+          :title="'user_id = ' + userId"
+          @click="logout"
+        >
+          退出（{{ currentUser.username }}）
+        </button>
       </div>
     </header>
 
     <div v-if="showSettings" class="settings">
       <label class="field">
-        <span>用户 ID</span>
-        <input v-model="userId" type="text" />
+        <span>用户 ID（登录后由账号决定，改这里不会切收藏夹）</span>
+        <input v-model="userId" type="text" readonly />
       </label>
       <label class="field">
         <span>会话 ID（同一 ID 共享图状态）</span>
@@ -303,18 +413,40 @@ onMounted(async () => {
                 <span class="fav-side-price">{{ item.price || '价格未知' }}</span>
                 <span class="fav-side-time">{{ (item.time || '').slice(0, 10) }}</span>
               </div>
-            </div>
 
-            <div class="fav-side-actions">
-              <a v-if="item.product_url" :href="item.product_url" target="_blank" rel="noopener">商品页</a>
-              <button
-                class="fav-side-remove"
-                type="button"
-                :disabled="favBusy === item.product_id"
-                @click="removeFavoriteItem(item)"
-              >
-                移除
-              </button>
+              <div class="fav-side-actions">
+                <button
+                  class="fav-side-link"
+                  type="button"
+                  :class="{ 'fav-side-link-open': pricePanel(item) && !pricePanel(item).collapsed }"
+                  @click="togglePricePanel(item)"
+                >
+                  价格记录
+                </button>
+                <a v-if="item.product_url" :href="item.product_url" target="_blank" rel="noopener">商品页</a>
+                <button
+                  class="fav-side-remove"
+                  type="button"
+                  :disabled="favBusy === item.product_id"
+                  @click="removeFavoriteItem(item)"
+                >
+                  移除
+                </button>
+              </div>
+
+              <!-- 价格记录：点上面的按钮才展开，数据也是那时才请求 -->
+              <div v-if="pricePanel(item) && !pricePanel(item).collapsed" class="price-panel">
+                <p v-if="pricePanel(item).loading" class="price-empty">正在读取…</p>
+                <p v-else-if="pricePanel(item).error" class="price-error">{{ pricePanel(item).error }}</p>
+
+                <ul v-else-if="pricePanel(item).points.length" class="price-list">
+                  <li v-for="(point, i) in pricePanel(item).points" :key="i">
+                    <span class="price-when">{{ pointTime(point) }}</span>
+                    <span class="price-amount">{{ point.price }}</span>
+                  </li>
+                </ul>
+                <p v-else class="price-empty">还没有价格记录，收藏时会自动记一笔。</p>
+              </div>
             </div>
           </div>
         </div>

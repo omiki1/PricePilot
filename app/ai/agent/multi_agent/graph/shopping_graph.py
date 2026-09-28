@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 # 记忆是「锦上添花」，所以整个接入是可失败的：import 不到、Redis/PG/向量库任一挂了，
 # 都只降级成「本轮无记忆」，绝不让主链路崩。
 try:
-    from app.ai.memory import ConversationManager
+    from app.ai.agent.memory import build_memory_block, update_memory
 except Exception as _exc:                       # noqa: BLE001
-    ConversationManager = None
+    build_memory_block = None
+    update_memory = None
     logger.warning('四层记忆不可用，降级为无记忆模式：%s', _exc)
 
 # 只有这些节点的文字给用户看。intent 里 create_agent 的工具调用不能进对话。
@@ -89,25 +90,19 @@ class ShoppingGraph:
         self.agent = graph.compile(checkpointer=self.memory)
         return self.agent
 
-    # ── [B 修改 2026-09-23] 四层记忆：初始化 / 取记忆 / 收尾 ────────────────
-    def _make_memory(self, user_id, session_id):
-        """一个请求一个会话管理器；建不起来就返回 None（本轮无记忆）。"""
-        if ConversationManager is None:
-            return None
-        try:
-            return ConversationManager(user_id=user_id or 'anonymous',
-                                       session_id=session_id)
-        except Exception as exc:                # noqa: BLE001
-            logger.warning('[memory] 初始化失败，本轮无记忆：%s', exc)
-            return None
+    # ── 四层记忆：取记忆 / 收尾 ──────────────────────────────────────────
+    # 具体实现在 app/ai/agent/memory/__init__.py，这里只管什么时候调。
+    async def _build_memory_block(self, user_id, session_id, question: str) -> str:
+        """进图前取四层记忆并拼成一段文本。
 
-    async def _build_memory_block(self, cm, question: str) -> str:
-        """组装四层记忆段落。读操作会打 Redis / PG / 向量库 + 一次嵌入接口，
-        所以丢到线程里跑，别卡住事件循环。"""
-        if cm is None:
+        读操作会打 Redis / PG / 向量库，所以丢到线程里跑，别卡住事件循环。
+        """
+        if build_memory_block is None:
             return ''
         try:
-            block = await asyncio.to_thread(cm.build_memory_block, question)
+            # 直接 await：memory 内部本来就是 async（async redis / async pg），
+            # Chroma 那次同步查询它自己已经 run_in_executor 了。
+            block = await build_memory_block(user_id, session_id, question)
             if block:
                 print(f'[memory] 已注入记忆 {len(block)} 字')
             return block or ''
@@ -135,33 +130,35 @@ class ShoppingGraph:
             logger.warning('[memory] 读取本轮答案失败：%s', exc)
             return ''
 
-    async def _finish_turn(self, cm, question: str, answer: str) -> None:
-        """收尾：L1 窗口同步写（快），L2/L3/L4 提取丢后台（慢，别拖 done 帧）。"""
-        if cm is None:
+    async def _finish_turn(self, user_id, session_id, question: str, answer: str) -> None:
+        """收尾：写 L1 窗口 + 更新 L2/L3/L4。
+
+        整件事丢后台 task：L2/L3/L4 都要调模型，跑起来几秒到十几秒，
+        同步等会把 SSE 的 done 帧一起拖住。
+        """
+        if update_memory is None:
             return
-        try:
-            await asyncio.to_thread(cm.save_user, question)
-            if answer:
-                await asyncio.to_thread(cm.save_ai, answer)
-        except Exception as exc:                # noqa: BLE001
-            logger.warning('[memory] 写入 L1 窗口失败：%s', exc)
-        task = asyncio.create_task(self._update_memory(cm, question))
+        messages = [{'role': 'user', 'content': question}]
+        if answer:
+            messages.append({'role': 'ai', 'content': answer})
+        task = asyncio.create_task(
+            self._update_memory(user_id, session_id, question, messages)
+        )
+        # 强引用：不存着的话 task 可能被 GC 提前回收，记忆更新就悄悄不跑了
         self._background.add(task)
         task.add_done_callback(self._background.discard)
 
-    async def _update_memory(self, cm, question: str) -> None:
-        """后台任务：跑 L2 摘要 / L3 长期记忆 / L4 画像的提取。"""
+    async def _update_memory(self, user_id, session_id, question: str, messages: list) -> None:
         try:
-            report = await asyncio.to_thread(cm.update, question)
+            report = await update_memory(user_id, session_id, question, messages)
             print(f'[memory] 本轮记忆更新完成：{report}')
         except Exception as exc:                # noqa: BLE001
             logger.warning('[memory] 记忆更新失败：%s', exc)
 
     async def chat(self, question, user_id, session_id):
         print(f'进入聊天:用户问题：{question},用户ID:{user_id},会话ID:{session_id}')
-        # [B 修改 2026-09-23] 四层记忆：进图前组装记忆段落
-        cm = self._make_memory(user_id, session_id)
-        memory_block = await self._build_memory_block(cm, question)
+        # 四层记忆：进图前组装记忆段落
+        memory_block = await self._build_memory_block(user_id, session_id, question)
         # user_id / session_id 仍要进 state：它们是归属信息，路径与状态两处保持一致
         user_msg = {
             'messages': [HumanMessage(content=question)],
@@ -184,4 +181,4 @@ class ShoppingGraph:
                 # 节点主动推的事件（目前只有商品帧），原样交给上层
                 yield data
         # 图跑完了：把这一轮写进四层记忆（跨会话留存）
-        await self._finish_turn(cm, question, await self._last_answer(config))
+        await self._finish_turn(user_id, session_id, question, await self._last_answer(config))

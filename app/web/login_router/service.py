@@ -47,6 +47,9 @@ class UserService:
                         "data": None
                         }
         except Exception as e:
+            # 必须打出来 —— 之前这里把异常吞了，注册一直失败但只返回"注册失败"，
+            # 真正的原因（passlib 与 bcrypt 版本冲突）查了很久才找到。
+            print(f"注册异常：{type(e).__name__}: {e}")
             return {"code": 500,
                     "msg": "注册失败",
                     "data": None

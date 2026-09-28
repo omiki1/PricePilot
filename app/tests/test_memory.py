@@ -34,7 +34,7 @@ if _REPO_ROOT not in sys.path:
 
 from chromadb.api.types import EmbeddingFunction as ChromaEmbeddingFunction
 
-from app.ai.memory.embedding import MemoryEmbeddingError, make_embedding_function  # noqa: E402
+from app.ai.memory.embedding import MemoryEmbeddingError   # noqa: E402
 from app.ai.memory.prompt_builder import PromptBuilder  # noqa: E402
 from app.ai.memory.retrieval.long_memory_agent import LongMemoryAgent  # noqa: E402
 from app.ai.memory.retrieval.memory_manager import MemoryManager  # noqa: E402
