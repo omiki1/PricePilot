@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PricePilot 三人工种分工说明书</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 14mm 14mm; }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+    font-size: 9.9pt;
+    line-height: 1.52;
+    color: #1a1c24;
+    background: #fff;
+  }
+
+  h1 {
+    margin: 0 0 4px;
+    font-size: 20pt;
+    letter-spacing: -0.5px;
+    color: #111318;
+  }
+
+  .sub {
+    margin: 0 0 2px;
+    font-size: 9.5pt;
+    color: #6b7280;
+  }
+
+  .rule {
+    height: 3px;
+    background: linear-gradient(90deg, #111318 0%, #ccf425 60%, #ffffff 100%);
+    margin: 10px 0 16px;
+    border-radius: 2px;
+  }
+
+  h2 {
+    font-size: 12.4pt;
+    margin: 15px 0 6px;
+    padding: 5px 0 5px 10px;
+    border-left: 4px solid #111318;
+    background: #f6f7f9;
+    color: #111318;
+  }
+
+  h2 .idx {
+    display: inline-block;
+    min-width: 20px;
+    color: #7c8a00;
+    font-weight: 800;
+  }
+
+  h3 {
+    font-size: 10.8pt;
+    margin: 14px 0 5px;
+    color: #111318;
+  }
+
+  p { margin: 5px 0; }
+
+  ul, ol { margin: 5px 0 5px; padding-left: 20px; }
+  li { margin: 2px 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 7px 0 9px;
+    font-size: 9pt;
+  }
+
+  th {
+    background: #111318;
+    color: #fff;
+    text-align: left;
+    padding: 4px 6px;
+    font-weight: 600;
+    border: 1px solid #111318;
+  }
+
+  td {
+    padding: 4px 6px;
+    border: 1px solid #dcdfe6;
+    vertical-align: top;
+  }
+
+  tbody tr:nth-child(even) td { background: #fafbfc; }
+
+  code, .code {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 8.8pt;
+    background: #f1f2f5;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #23262f;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 8.4pt;
+    font-weight: 700;
+    line-height: 1.7;
+    white-space: nowrap;
+  }
+  .tag-a { background: #111318; color: #ccf425; }
+  .tag-b { background: #e8efff; color: #1e40af; }
+  .tag-c { background: #ffeeea; color: #b3341a; }
+  .tag-x { background: #f3f4f6; color: #4b5563; }
+
+  .box {
+    border: 1px solid #dcdfe6;
+    border-left: 4px solid #ccf425;
+    background: #fbfdf3;
+    padding: 8px 11px;
+    margin: 9px 0;
+    border-radius: 0 5px 5px 0;
+  }
+
+  .box.warn {
+    border-left-color: #ff5a3c;
+    background: #fff7f5;
+  }
+
+  .box.plain {
+    border-left-color: #9aa0b0;
+    background: #f8f9fb;
+  }
+
+  .box .bt {
+    font-weight: 800;
+    font-size: 9.8pt;
+    display: block;
+    margin-bottom: 3px;
+  }
+
+  .grid2 { display: flex; gap: 10px; }
+  .grid2 > div { flex: 1; }
+
+  .kv { font-size: 9.2pt; }
+  .kv b { color: #111318; }
+
+  .pagebreak { page-break-before: always; }
+
+  /* ── 打印分页控制：避免"孤字页"和跨页断行 ── */
+  h1, h2, h3 { break-after: avoid-page; page-break-after: avoid; }
+  tr, li { break-inside: avoid-page; page-break-inside: avoid; }
+  table { break-inside: auto; }
+  thead { display: table-header-group; }
+  .box { break-inside: avoid-page; page-break-inside: avoid; }
+  ol, ul { break-inside: auto; }
+  /* 段落/列表项之间不要被硬切开 */
+  p, li { orphans: 2; widows: 2; }
+
+  .footer-note {
+    margin-top: 18px;
+    padding-top: 8px;
+    border-top: 1px dashed #c9ccd4;
+    font-size: 8.6pt;
+    color: #6b7280;
+  }
+
+  .num { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<h1>PricePilot 三人工种分工说明书</h1>
+<p class="sub">答辩用 · 基于实际代码核对（提交 94f9d01 · 26 文件 · +4182 / −404）</p>
+<p class="sub">三块之间只有两处交接点，各自可独立讲清、独立被追问</p>
+<div class="rule"></div>
+
+<h2><span class="idx">0</span>先分清「推荐」这个词的两种含义</h2>
+
+<p>本项目里有 <b>两件完全不同的事都叫「推荐」</b>，答辩时最容易互相打脸，必须先分开：</p>
+
+<table>
+  <thead>
+    <tr><th style="width:22%">名称</th><th style="width:30%">代码位置</th><th style="width:26%">触发时机</th><th style="width:22%">归属</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>对话内排序推荐</b><br>（图里那个节点）</td>
+      <td><span class="code">recommend_node.py</span>(41)<br><span class="code">rank_top3.py</span>(32)</td>
+      <td>用户发话 → 检索到商品 → 贝叶斯排序取 Top3</td>
+      <td><span class="tag tag-a">甲（你）</span></td>
+    </tr>
+    <tr>
+      <td><b>首页按画像推荐</b><br>（这次要分出去的）</td>
+      <td><span class="code">recommend_service.py</span>(417)<br><span class="code">recommend_router/</span><br><span class="code">HomeRecs.vue</span></td>
+      <td>打开/刷新空白页 → 读画像 → 直接拉商品</td>
+      <td><span class="tag tag-x">待指派</span>（建议归乙）</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="box warn">
+  <span class="bt">必须记住的区别</span>
+  前者是<b>图内一个节点</b>，输入是本次检索结果，产出 <span class="code">ranked_top</span> 并推 <span class="code">products</span> 帧；<br>
+  后者是<b>图外的独立 HTTP 服务</b>，压根不进 LangGraph，输入是 Redis 里的用户画像与收藏夹，自己再调一次 Shopify。
+</div>
+
+<h2><span class="idx">1</span>三块划分总览</h2>
+
+<p>切分原则：<b>按职责边界切，不把任何单个模块劈成两半</b>。保证每个人讲自己那块时前后闭合，被追问不会牵出别人的未讲内容。</p>
+
+<table>
+  <thead>
+    <tr><th style="width:9%">代号</th><th style="width:26%">负责范围</th><th style="width:39%">一句话定位</th><th style="width:26%">在流程中的位置</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="tag tag-a">甲</span></td>
+      <td>意图分流 + 检索链节点<br>+ Schema / 适配层</td>
+      <td>用户这句话该闲聊、该追问还是该检索；检索回来怎么变成统一商品对象、排序、输出</td>
+      <td>主链路主干<br>（已定，答辩原内容）</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-b">乙</span></td>
+      <td>用户状态与决策前记忆<br>+ 首页画像推荐</td>
+      <td>「这个用户是谁、之前说过什么」如何进入决策，以及打开页面时按画像推什么</td>
+      <td>进图<b>之前</b>注入<br>+ 图外独立接口</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-c">丙</span></td>
+      <td>算价 · 证据 · 对比报告<br>+ 会话/用户 · 前端</td>
+      <td>价格怎么算准、结论凭什么可信、数据怎么落库、界面怎么交付</td>
+      <td>主链路<b>之后</b>与对外交付</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>交接点（全场只有两处）</h3>
+<table>
+  <thead>
+    <tr><th style="width:14%">交接</th><th style="width:43%">交出去的东西</th><th style="width:43%">谁讲、谁只说一句</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>乙 → 甲</b></td>
+      <td><span class="code">shopping_graph.chat()</span> 进图前组装好 <span class="code">memory_block</span>，写进 state；甲的两个节点（<span class="code">chat_node</span> / <span class="code">output_node</span>）直接复用</td>
+      <td>乙讲记忆怎么组装；甲只讲「拿到现成文本，末尾加一句『记忆是背景，冲突时以本次需求为准』」</td>
+    </tr>
+    <tr>
+      <td><b>甲 → 丙</b></td>
+      <td>甲产出 <span class="code">Product</span> 对象列表与 <span class="code">ranked_top</span>；丙在其上算价、取证据、写报告</td>
+      <td>甲讲 Schema 契约；丙讲「吃到的是已经归一化的对象，所以不必关心 Shopify 原始字段」</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="pagebreak"></div>
+
+<h2><span class="idx">2</span>甲 —— 意图分流与检索链节点（你的部分，已定）</h2>
+
+<table>
+  <thead>
+    <tr><th style="width:34%">内容</th><th style="width:34%">文件</th><th style="width:32%">关键设计点</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>意图分流三支 + 空查询转追问</td>
+      <td><span class="code">intent_node.py</span>(149)<br><span class="code">clarify_node.py</span><br><span class="code">shopping_graph.py:36</span> <span class="code">route_after_intent</span></td>
+      <td><span class="code">chat</span> / <span class="code">clarify</span> / <span class="code">shopify_search</span> 四选一；<b>search 但检索词为空 → 退回追问</b></td>
+    </tr>
+    <tr>
+      <td>意图识别与输出归一化</td>
+      <td><span class="code">intent_schema.py</span>(14)<br><span class="code">price_pref</span> 归一化、<span class="code">compose_search_keyword</span></td>
+      <td>把 <span class="code">cheap</span> / <span class="code">便宜</span> / <span class="code">low</span> 收敛成统一取值，避免拼写差异导致下游漏判</td>
+    </tr>
+    <tr>
+      <td>Shopify 检索（MCP）</td>
+      <td><span class="code">shopify_search_node.py</span>(68)<br><span class="code">search_shopify.py</span>(142)</td>
+      <td>MCP 调用 + <b>第二道空查询闸</b> + 检索失败降级为空候选</td>
+    </tr>
+    <tr>
+      <td>Schema 与适配层</td>
+      <td><span class="code">shopping_schema.py</span>(31)<br><span class="code">adapter.py</span>(178)</td>
+      <td>state → 统一输入 → MCP 参数 → 统一 <span class="code">Product</span> 对象</td>
+    </tr>
+    <tr>
+      <td>排序与输出节点</td>
+      <td><span class="code">recommend_node.py</span>(41)<br><span class="code">rank_top3.py</span>(32)<br><span class="code">output_node.py</span>(97)</td>
+      <td>贝叶斯加权取 Top3；<b>注意</b>：取证与人民币补齐也在这个节点内（与丙相邻）</td>
+    </tr>
+    <tr>
+      <td>闲聊分支</td>
+      <td><span class="code">chat_node.py</span>(58)</td>
+      <td>元问题/寒暄不走检索，但仍注入记忆与最近对话</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="box">
+  <span class="bt">你答辩时的核心论点</span>
+  让「用户这句话到底该怎么处理」变成<b>一个有守卫的确定性问题</b>，而不是把原始输入直接丢给检索。
+</div>
+
+<h3>必须准备的三个细节（有实测数据支撑，最能加分）</h3>
+<ol>
+  <li><b>为什么必须拦住空查询</b>：Shopify catalog 是宽松语义检索，任何 query 都返回 50 条。实测 <span class="code">'鸣潮'</span> → 返回一味中药 <i>Rhizoma</i>；<span class="code">'来一个1000以内的鸣潮周边'</span> → 返回一本讲鸡的书 <i>What the Chicken Knows</i>。所以空/无意义检索词等于<b>随机抽 50 个商品给模型推荐</b>。</li>
+  <li><b>同一道闸为什么设两处</b>：<span class="code">route_after_intent</span> 拦在路由层，<span class="code">shopify_search_node</span> 拦在发请求前。前者保证不「假装要检索」，后者保证不「真的发出去」——纵深防御，且第二处把降级暴露在日志里而不是伪装成「没货」。</li>
+  <li><b>预算语义的关键修正</b>：<span class="code">BUDGET_MIN_RATIO</span> 原为 0.1，把「1000 以内」误解成 900~1000 区间；实测 50 条候选全被判「低于下限」丢弃 → 候选 0 条 → 前端显示空白。改为 0 后只保上限，与 API 侧口径一致。</li>
+</ol>
+
+<div class="pagebreak"></div>
+
+<h2><span class="idx">3</span>乙 —— 用户状态与决策前记忆 + 首页画像推荐</h2>
+
+<table>
+  <thead>
+    <tr><th style="width:30%">内容</th><th style="width:36%">文件</th><th style="width:34%">关键设计点</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>四层记忆 · 存储层</td>
+      <td><span class="code">save/window_memory.py</span>(49)<br><span class="code">save/summary_memory.py</span>(55)<br><span class="code">save/long_memory.py</span>(102)<br><span class="code">save/profile_memory.py</span>(36)</td>
+      <td>L1 Redis List（窗口）· L2 PostgreSQL（摘要 UPSERT）· L3 Chroma 向量（长期偏好）· L4 Redis Hash（结构化画像）</td>
+    </tr>
+    <tr>
+      <td>四层记忆 · 提取层</td>
+      <td><span class="code">retrieval/SummaryAgent.py</span>(73)<br><span class="code">retrieval/long_agent.py</span>(77)<br><span class="code">retrieval/profile_agent.py</span>(88)</td>
+      <td>三个 Agent 各管一层：本次聊了什么 / 一贯偏好 / 结构性事实</td>
+    </tr>
+    <tr>
+      <td>记忆调度与组装</td>
+      <td><span class="code">memory/manager/</span> 三个文件<br><span class="code">memory/__init__.py</span>(47)</td>
+      <td>按 <b>窗口 → 摘要 → 长期 → 画像</b> 顺序拼成一段文本，由近到远，冲突时模型应更信靠前的</td>
+    </tr>
+    <tr>
+      <td>进图前注入 / 出图后回写</td>
+      <td><span class="code">shopping_graph._build_memory_block</span><br><span class="code">_last_answer</span> / <span class="code">_finish_turn</span></td>
+      <td>注入失败只降级成「本轮无记忆」；回写丢后台 task，不阻塞 SSE 的 done 帧</td>
+    </tr>
+    <tr>
+      <td><b>首页按画像推荐</b></td>
+      <td><span class="code">recommend_service.py</span>(417)<br><span class="code">recommend_router/</span><br><span class="code">HomeRecs.vue</span>(194)</td>
+      <td>画像 → 收藏 → 示例 <b>三级降级</b>；指纹缓存（画像变了自动失效）；<span class="code">refresh=1</span> 换一批</td>
+    </tr>
+    <tr>
+      <td>画像与推荐的口径对接</td>
+      <td><span class="code">routers</span> 读 <span class="code">profile:{user_id}</span></td>
+      <td>读 <span class="code">frequent_categories</span> / <span class="code">preferred_brands</span> 决定推什么；<span class="code">budget_habit</span> 解析成预算；<span class="code">avoid</span> + <span class="code">disliked_brands</span> 组成黑名单</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="box">
+  <span class="bt">乙答辩时的核心论点</span>
+  模型每一轮都必须重新知道「这个用户是谁」。记忆不是把历史塞进 prompt，而是<b>四层不同时效、不同结构的信息，各有分工、各有降级</b>。
+</div>
+
+<h3>必须准备的关键细节</h3>
+<ol>
+  <li><b>Checkpointer 与四层记忆的分工（高频追问点）</b>：<span class="code">InMemorySaver</span> 存的是<b>图内运行状态</b>，进程内、重启即失效；四层记忆是<b>跨会话要记住的用户信息</b>，落 Redis / PG / 向量库。两者职责不同，不能互相替代。</li>
+  <li><b>画像为空时推荐为什么不是空白</b>：<span class="code">MODE_PROFILE</span> 要求画像里至少有 <span class="code">frequent_categories</span> 或 <span class="code">preferred_brands</span>，否则降级到 <span class="code">MODE_FAVORITES</span>（用收藏标题找同类），都没有才 <span class="code">MODE_SAMPLES</span>（给 4 个示例问题、不给商品卡）。</li>
+  <li><b>缓存怎么保证不给人过期画像</b>：缓存 key 里带画像指纹（<span class="code">profile_fingerprint</span>），画像一变指纹就变，命中失效自动重查——不需要手写失效逻辑。</li>
+  <li><b>L3 为什么必须换成本地中文嵌入</b>：Chroma 默认的 <span class="code">all-MiniLM-L6-v2</span> 是英文模型，对「只买黑色」「通勤戴」这类中文偏好的语义区分度差，且首次使用要联网下载 79MB。改为读 <span class="code">EMBEDDING_LOCAL_PATH</span> 指向本地 bge-base-zh。</li>
+</ol>
+
+<div class="pagebreak"></div>
+
+<h2><span class="idx">4</span>丙 —— 算价 · 证据 · 对比报告 · 会话与交付</h2>
+<table>
+  <thead>
+    <tr><th style="width:30%">内容</th><th style="width:36%">文件</th><th style="width:34%">关键设计点</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>价格引擎与优惠计算</td>
+      <td><span class="code">price_calculator.py</span>(178)<br><span class="code">price_schema.py</span>(167)<br><span class="code">currency.py</span>(170)<br><span class="code">offer_builder.py</span>(105)</td>
+      <td>券互斥组 / 门槛 / 有效期 / 返现上限 / 证据 ID 合并去重；金额全程 Decimal</td>
+    </tr>
+    <tr>
+      <td>商品标准化与同款识别</td>
+      <td><span class="code">sku_matcher.py</span>(92)</td>
+      <td>不同来源归一成同款再比价</td>
+    </tr>
+    <tr>
+      <td>证据体系与可信度</td>
+      <td><span class="code">review_fetch_tool.py</span>(187)<br><span class="code">review_evidence.py</span>(200)<br><span class="code">review_node.py</span>(242)</td>
+      <td>抓评论 → 清洗 → <b>引用不到的结论直接丢弃</b></td>
+    </tr>
+    <tr>
+      <td>对比与报告子图</td>
+      <td><span class="code">comparison_graph.py</span>(140)<br><span class="code">compare_node.py</span>(337)<br><span class="code">reporter_node.py</span>(255)</td>
+      <td>预处理 → … → 有证据的对比报告；独立子图</td>
+    </tr>
+    <tr>
+      <td>联网搜索商品评价</td>
+      <td><span class="code">web_search.py</span>(64)</td>
+      <td>为 Top3 补第三方证据（与甲的 <span class="code">recommend_node</span> 相邻）</td>
+    </tr>
+    <tr>
+      <td>会话 / 用户 / SSE</td>
+      <td><span class="code">session_repository.py</span>(210)<br><span class="code">session_router/</span> · <span class="code">deps.py</span>(30)<br><span class="code">chat_router.py</span>(94)<br><span class="code">login_router/</span>(315)</td>
+      <td>三种 SSE 帧；会话归属校验不一致返回 403；软删除；懒创建会话</td>
+    </tr>
+    <tr>
+      <td>前端</td>
+      <td><span class="code">App.vue</span> · <span class="code">SessionSidebar.vue</span><br><span class="code">HomeRecs.vue</span> · <span class="code">style.css</span></td>
+      <td>会话侧栏 / 商品卡（序号、证据、评分）/ 收藏抽屉含价格历史</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="box">
+  <span class="bt">丙答辩时的核心论点</span>
+  <b>不能让模型编造价格理由。</b>价格是一个有约束的合同对象、不是 float；每条结论都要能溯源到证据，溯源不到就在生成阶段拦掉。
+</div>
+
+<h3>必须准备的关键细节</h3>
+<ol>
+  <li><b>为什么价格要建成合同对象</b>：一次付款同时受券互斥组、券门槛、有效期、返现上限、币种约束。测试用例明确覆盖：负价/零价在合同层就拒绝、三位小数被拒绝、返现超过付款金额要报错、优惠大于商品金额被排除、<span class="code">now</span> 必须带时区、有效期取<b>选中券的最早截止</b>。</li>
+  <li><b>「解释里查无出处的金额」怎么抓</b>：报告中出现的金额必须能对应到证据 ID，对不上的会被判定为模型编造并揪出；同时纯统计数字（条数、比例）不会被误判成金额。</li>
+  <li><b>避雷项为什么是硬排除而不是降权</b>：用户说「不要二手」是硬条件，降权意味着可能仍然推给他。且只做字面匹配、不命中近义词——宁可漏排也不误排。</li>
+  <li><b>贝叶斯平均为什么必要</b>：<span class="code">score = (v/(v+m))·R + (m/(v+m))·C</span>，<span class="code">m=50</span>，同 IMDB Top 250 口径。解决「5.0 分只有 3 条评价」压过「4.6 分有 656 条」；无评价商品 <span class="code">score=None</span> 并标注「暂无评价，无法评估」，而<b>不是当 0 分</b>。</li>
+  <li><b>SSE 三种帧</b>：<span class="code">text</span>（增量文本）/ <span class="code">products</span>（商品卡数据）/ <span class="code">done</span>（结束，带 <span class="code">saved=false</span> 表示答完但没存进历史）。断流有 <span class="code">stream_broken</span> 错误码。</li>
+  <li><b>跨平台坑（最能体现动手能力）</b>：Windows 上 uvicorn 硬编码返回 <span class="code">ProactorEventLoop</span>，而 psycopg 异步模式要求 <span class="code">SelectorEventLoop</span>，必然报错；最后改成同步驱动 + <span class="code">asyncio.to_thread</span>。另有 passlib 1.7.4 与 bcrypt ≥ 4.1 不兼容（初始化即抛错且被 service 层吞掉，表现为「注册失败」），改为直接调 bcrypt。</li>
+</ol>
+
+<h2><span class="idx">5</span>工作量与讲时对照</h2>
+
+<table>
+  <thead>
+    <tr><th style="width:28%">维度</th><th style="width:24%"><span class="tag tag-a">甲</span></th><th style="width:24%"><span class="tag tag-b">乙</span></th><th style="width:24%"><span class="tag tag-c">丙</span></th></tr>
+  </thead>
+  <tbody>
+    <tr><td>主要文件数</td><td class="num">约 10</td><td class="num">约 15</td><td class="num">约 20</td></tr>
+    <tr><td>主要代码行</td><td class="num">约 700</td><td class="num">约 1100</td><td class="num">约 2100</td></tr>
+    <tr><td>自动化测试</td><td class="num">意图路由 20 条</td><td class="num">记忆端到端实测</td><td class="num">价格 26 + 对比报告 38<br>+ 会话/推荐 54</td></tr>
+    <tr><td>建议讲时</td><td class="num">7–8 分钟</td><td class="num">9–10 分钟</td><td class="num">12–14 分钟</td></tr>
+    <tr><td>演示重点</td><td>一句模糊需求 → 是否被追问</td><td>刷新首页 → 画像变了推荐跟着变</td><td>一张对比报告 → 证据可溯源</td></tr>
+  </tbody>
+</table>
+
+<div class="box plain">
+  <span class="bt">如果丙嫌偏多</span>
+  可把「前端（<span class="code">App.vue</span> / <span class="code">SessionSidebar.vue</span> / <span class="code">HomeRecs.vue</span> / <span class="code">style.css</span>）」整体移给乙。理由是首页推荐卡本身就是乙的「首页按画像推荐」的展示层，两人接口一致（<span class="code">/api/recommendations</span> 返回的 <span class="code">mode</span> + <span class="code">products</span>），不会出现接口互相甩锅。移完后：乙约 1300 行、丙约 1900 行。
+</div>
+
+<h2><span class="idx">6</span>答辩前必须处理的三个风险</h2>
+
+<table>
+  <thead>
+    <tr><th style="width:26%">风险</th><th style="width:44%">具体问题</th><th style="width:30%">处理建议</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>记忆测试跑不起来</b></td>
+      <td><span class="code">tests/test_memory.py</span>(404) 仍 import 旧路径 <span class="code">app.ai.memory.*</span>，而模块已迁到 <span class="code">app.ai.agent.memory.*</span>；且旧测试全同步 + 注入 stub 模型，新实现全 async 且模型由单例自取。现场一跑即 <span class="code">ModuleNotFoundError</span>。</td>
+      <td>三选一：① 按新 API 重写（功能已实测跑通，重写后能真跑）；② 表述改为「记忆走端到端实测」；③ 直接删除该失效文件</td>
+    </tr>
+    <tr>
+      <td><b>「推荐」一词混淆</b></td>
+      <td>甲讲「我做了推荐与输出」，乙讲「我做了首页推荐」，评委极可能问「你俩做的是不是一件事」。</td>
+      <td>开场各用一句话界定：甲讲<b>对话内的排序节点</b>，乙讲<b>打开页面时按画像推</b>，并主动说明二者数据来源不同（见第 0 节）</td>
+    </tr>
+    <tr>
+      <td><b>取证职责相邻</b></td>
+      <td><span class="code">recommend_node</span>（甲）内同时做了 Top3 取证与人民币补齐，而取证工具 <span class="code">web_search.py</span>、汇率 <span class="code">currency.py</span> 归丙。</td>
+      <td>甲只讲「排序取 Top3 后并发取证，失败降级为空证据」；丙讲「取证与汇率工具本身、以及报告级证据体系」。被追问细节时明确交棒</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2><span class="idx">7</span>建议的答辩顺序</h2>
+
+<ol>
+  <li><b>甲先讲 2 分钟总览</b>：整条链路是怎么串的（意图 → 检索 → 排序 → 输出），让评委先有全图。</li>
+  <li><b>乙讲用户状态</b>：承接甲，说明「进图之前」发生了什么。交界句：<i>「甲的两个节点拿到的记忆块是现成文本，我这边负责它是怎么组装、失败怎么降级。」</i></li>
+  <li><b>丙讲算价与证据</b>：承接甲，说明「检索结果之后」发生了什么。交界句：<i>「甲交给我的是已归一化的商品对象，所以我不用关心 Shopify 原始字段。」</i></li>
+  <li><b>三人各留一个可现场演示的点</b>（见第 5 节表格末行），避免纯讲代码。</li>
+</ol>
+
+<div class="footer-note">
+  本文档基于仓库实际代码核对生成（提交 <span class="code">94f9d01</span>「完善推荐系统」，26 文件 / +4182 −404）。所有文件行数为实测值，括号内数字即行数。<br>
+  文中标注的实测数据（Shopify 宽松检索返回无关商品、<span class="code">BUDGET_MIN_RATIO</span> 导致候选清零）均来自代码注释中记录的原始排查过程，可直接引用。
+</div>
+
+</body>
+</html>
