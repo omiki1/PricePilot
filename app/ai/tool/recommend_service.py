@@ -1,21 +1,4 @@
-"""首页推荐：按用户画像直接检索 Shopify，不走 LLM（omiki 2026-09-29）
-
-流程（GET /api/recommendations 调 get_recommendations）：
-    1. 读 Redis 画像 profile:{user_id}（字段见 memory/save/profile_memory.py，只读不写）
-    2. 有画像（常买品类 / 偏好品牌至少一项）→ 拼 1~3 个检索词 → 并发调 search_shopify
-    3. 过滤：不喜欢的品牌、避雷词命中标题/店铺的丢掉；预算习惯里能读出数字就按人民币上限筛
-    4. 去重、按检索词轮流取，最多 8 件，每件带 match（给前端 recReason 拼理由）
-    5. 画像为空 → 用收藏夹里的商品标题找同类（mode=favorites）；都没有 → mode=samples 不给商品
-    6. 结果缓存到 Redis rec:{user_id}，30 分钟；refresh=1 跳过缓存并换一批
-
-为什么不走 LLM：首页一打开就要出结果，模型一次 3~10s 且要花钱；
-画像已经是结构化字段，拼检索词 + 规则过滤就够了，而且结果可复现、好测试。
-
-文案约束（见 ui_copy.js / PricePilot_界面文案.md）：
-    - match 只放「真的命中」的字段：category / brand / inBudget / favoriteName
-    - 不喜欢的品牌只用来过滤，不进 match（也就不会出现在文案里）
-    - 预算只给 inBudget 布尔值，不给金额
-"""
+"""首页推荐：按用户画像直接检索 Shopify，不走 LLM"""
 from __future__ import annotations
 
 import hashlib
@@ -52,10 +35,7 @@ MODE_PROFILE, MODE_FAVORITES, MODE_SAMPLES = 'profile', 'favorites', 'samples'
 _EMPTY_VALUES = {'无', '没有', '暂无', '未知', '不限', '都行', '随便', 'none', 'null', 'n/a', '-', '—'}
 _SPLIT = re.compile(r'[,，、;；/|\n]+')
 
-# ── 中文 → 英文检索词 ──────────────────────────────────────────────────────
-# 画像是 profile_agent 从中文对话里抽的（「键盘」「罗技」），而 Shopify catalog 是英文库，
-# 中文词拿去搜基本是随机结果（adapter 注释里的「鸣潮 → 中药」）。聊天链路靠 intent 节点让模型
-# 译成英文；这里不走模型，就用一张小词表兜住常见品类/品牌，查不到的原样发。
+# 中文 → 英文检索词。
 ZH_EN_CATEGORY = {
     '机械键盘': 'mechanical keyboard', '键盘': 'keyboard', '鼠标': 'mouse',
     '降噪耳机': 'noise cancelling headphones', '蓝牙耳机': 'bluetooth earbuds', '耳机': 'headphones',
@@ -106,8 +86,6 @@ _NUMBER = re.compile(r'(\d+(?:\.\d+)?)\s*(k|K|千|w|W|万)?')
 class RecommendSearchError(RuntimeError):
     """这一轮所有检索都失败了（不是「没搜到」）。"""
 
-
-# ────────────────────────────────────────────────────────────── 画像解析
 
 def split_terms(value) -> list[str]:
     """逗号/顿号/分号分隔的画像字段 → 去空、去占位、去重（保序）。"""
@@ -163,11 +141,7 @@ def avoid_terms(avoid: str) -> set[str]:
 
 
 def parse_budget_cny(text: str) -> Decimal | None:
-    """从预算习惯里读人民币上限：「通常不超过 800」→800；「1000-2000」→2000；「2k」→2000；「1.5万」→15000。
-
-    读不出数字返回 None（「愿意为音质加预算」这种不设上限）。带「左右/大概」的按 1.2 倍放宽，
-    写了美元/USD 的按 currency.py 的汇率换成人民币。
-    """
+    """从预算习惯里读人民币上限：「通常不超过 800」→800；「1000-2000」→2000；「2k」→2000；「1.5万」→15000。"""
     values = []
     for number, unit in _NUMBER.findall(text or ''):
         value = Decimal(number)
@@ -195,10 +169,8 @@ def profile_fingerprint(profile: dict) -> str:
     return hashlib.sha1(body.encode('utf-8')).hexdigest()
 
 
-# ────────────────────────────────────────────────────────────── 检索与筛选
-
 def _redis():
-    """和 WindowMemory 同一套环境变量；画像 key 目前写在 localhost:6379/0（ProfileMemory 写死），默认值与它一致。"""
+    """读取画像和推荐缓存所用的 Redis 连接。"""
     password = os.getenv('REDIS_PASSWORD') or None
     return redis.Redis(
         host=os.getenv('REDIS_HOST') or 'localhost',
@@ -278,11 +250,7 @@ def _price_cny(product) -> Decimal | None:
 def _pick(buckets: list[tuple[dict, list]], *, blocked: set[str], budget: Decimal | None,
           exclude_ids: set[str], previous_ids: set[str], shuffle_seed: str | None,
           brands: list[str]) -> list[dict]:
-    """过滤 + 去重 + 各检索词轮流取，返回带 match 的商品 dict（最多 MAX_PRODUCTS）。
-
-    buckets：[(基础 match, [Product...]), ...]，一个检索词一个桶。
-    shuffle_seed 非空（换一批）时桶内先打乱，再把上一批已经展示过的挪到最后。
-    """
+    """过滤 + 去重 + 各检索词轮流取，返回带 match 的商品 dict（最多 MAX_PRODUCTS）。"""
     rng = random.Random(shuffle_seed) if shuffle_seed else None
     brand_names = [(brand, brand_aliases(brand)) for brand in brands]
     prepared = []
@@ -385,8 +353,6 @@ def _favorite_buckets(favorites, round_no):
     return [(base, products) for (base, _), products in zip(plans, results)], [q for _, q in plans]
 
 
-# ────────────────────────────────────────────────────────────── 入口
-
 def _samples(user_id: str, *, error: bool = False, fingerprint: str = '', round_no: int = 0) -> dict:
     return {'user_id': user_id, 'mode': MODE_SAMPLES, 'products': [], 'error': error,
             'cached': False, 'round': round_no, 'exhausted': False,
@@ -424,7 +390,7 @@ def _cache_set(client, key, payload):
 
 
 def get_recommendations(user_id: str, refresh: bool = False) -> dict:
-    """首页推荐入口。任何检索 / Redis 故障都降级成 samples + error=True，不抛异常。"""
+    """根据画像或收藏推荐，已知服务故障时返回示例模式。"""
     user_id = (str(user_id or '').strip() or 'default')[:64]
     key = CACHE_KEY.format(user_id=user_id)
     try:
@@ -445,9 +411,13 @@ def get_recommendations(user_id: str, refresh: bool = False) -> dict:
         if fresh:
             return {**previous, 'cached': True}
 
-    round_no = (int(previous.get('round') or 0) + 1) if (refresh and previous) else (1 if refresh else 0)
-    previous_ids = {p.get('product_id') for p in (previous or {}).get('products') or []} if refresh else set()
-    seed = f'{user_id}:{round_no}' if refresh else None
+    round_no = 0
+    previous_ids = set()
+    seed = None
+    if refresh:
+        round_no = int((previous or {}).get('round') or 0) + 1
+        previous_ids = {p.get('product_id') for p in (previous or {}).get('products') or []}
+        seed = f'{user_id}:{round_no}'
 
     categories = split_terms(profile.get('frequent_categories'))
     brands = split_terms(profile.get('preferred_brands'))

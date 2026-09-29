@@ -5,13 +5,7 @@ from app.ai.agent.memory.save.profile_memory import ProfileMemory
 
 
 class PromptBuilder:
-    """按固定顺序把四层记忆拼成一段文本，喂给下游节点当上下文。
-
-    顺序：窗口 -> 摘要 -> 长期 -> 画像。
-    由近到远：越靠前的越贴近当下，冲突时模型应该更信前面的。
-
-    每层单独一行、带标题，并各自 try/except —— 某一层挂了不该让整段记忆变空。
-    """
+    """按固定顺序把四层记忆拼成一段文本，喂给下游节点当上下文。"""
 
     def __init__(self, session_id, user_id):
         self.window_memory = WindowMemory(session_id)
@@ -31,7 +25,7 @@ class PromptBuilder:
         if window:
             lines = [f"{'用户' if i.get('role') == 'user' else '助手'}：{i.get('content', '')}"
                      for i in window]
-            sections.append("【最近对话】\n" + chr(10).join(lines))
+            sections.append("【最近对话】\n" + '\n'.join(lines))
 
         # L2 摘要：更早的会话内容压缩成的要点
         try:
@@ -49,7 +43,7 @@ class PromptBuilder:
             print(f"[memory] 读长期记忆失败：{exc}")
             long_items = []
         if long_items:
-            sections.append("【长期偏好】\n" + chr(10).join(
+            sections.append("【长期偏好】\n" + '\n'.join(
                 item if item.strip().startswith("-") else f"- {item}" for item in long_items))
 
         # L4 画像：结构化属性
@@ -68,6 +62,6 @@ class PromptBuilder:
             "以下是这位用户的历史记忆，供参考。\n"
             "与本次需求冲突时，一律以本次需求为准。\n"
         )
-        return header + chr(10).join(sections)
+        return header + '\n'.join(sections)
 
 

@@ -1,20 +1,4 @@
-"""首页推荐接口（omiki 2026-09-29）
-
-main.py 以 prefix='/api' 注册：GET /api/recommendations?user_id=&refresh=0|1
-
-返回：
-    {
-      "mode": "profile" | "favorites" | "samples",
-      "products": [Product + price_text + match{category?, brand?, inBudget?, favoriteName?}],
-      "error": false,       # true = 画像/检索挂了，前端显示「推荐暂时加载不出来…」+ 示例问题
-      "cached": true,       # 命中 rec:{user_id} 缓存
-      "round": 0,           # 第几次「换一批」
-      "exhausted": false    # 换一批没换出新商品
-    }
-当前用户来自 Depends(get_current_user_id)；缺身份是 401（这是鉴权问题，不属于「推荐挂了」）。
-除此之外这个接口永远返回 200：首页推荐是锦上添花，出任何错都不能让新对话页变成白屏。
-普通 def：检索和 Redis 都是同步调用，交给线程池。
-"""
+"""首页推荐接口"""
 from fastapi import APIRouter, Depends, Query
 
 from app.ai.tool.recommend_service import get_recommendations

@@ -7,11 +7,7 @@ from app.ai.agent.memory.save.profile_memory import ProfileMemory
 
 
 class ProfileParams(BaseModel):
-    """购物画像的结构化字段。
-
-    每个字段对应 Redis Hash 里的一个 key（ProfileMemory.save(key, value)）。
-    空值不写库 —— profile_agent 里用 if value 过滤，未提及的保持默认值即可。
-    """
+    """购物画像的结构化字段。"""
 
     name: str = Field(default="", description="称呼/姓名，如「张先生」「小李」")
     city: str = Field(default="", description="所在或收货城市，影响运费和可购渠道")
@@ -24,13 +20,7 @@ class ProfileParams(BaseModel):
 
 
 class ProfileAgent:
-    """用户画像记忆：把对话里能读出的「这个人是谁、怎么买东西」存成结构化字段。
-
-    和另外两层的分工：
-      摘要     → 这次聊了什么
-      长期记忆 → 一贯偏好（文本，向量检索）
-      画像     → 结构性事实（字段，直接整份读出来）
-    """
+    """用户画像记忆：把对话里能读出的「这个人是谁、怎么买东西」存成结构化字段。"""
 
     def __init__(self, profile_memory: ProfileMemory):
         self.model = MyModel.get_model()
@@ -96,8 +86,7 @@ class ProfileAgent:
             rs = await self.agent.ainvoke({"messages": [HumanMessage(content=question)]})
             data = rs["structured_response"].model_dump()
             print(data)
-            # 空值不写库：否则会把已有画像覆盖成空字符串，
-            # 用户上次说过的城市、预算习惯就丢了。
+            # 空值不写库：否则会把已有画像覆盖成空字符串。
             saved = [k for k, v in data.items() if v]
             for key in saved:
                 await self.profile_memory.save(key, data[key])

@@ -1,21 +1,5 @@
 # -*- coding: utf-8 -*-
-"""PricePilot 数据库读写草稿（B · 决策引擎）
-
-定位：这是【草稿】，用来验证 db/schema_mysql.sql 的表结构能支撑
-      「检索 Top3 → 用户说记录第二个 → 存库」和「价格快照 → 价格对比」两条链路。
-      正式版按手册分层归到 app/ai/tool/product_repository.py，由 C 收口为唯一 DB 边界；
-      A 只调用本模块暴露的函数，不自己写 SQL。
-
-用法：
-    python db/repository_draft.py          # 跑一遍自检（插入演示商品/报价/两批价格，再读回）
-    python db/repository_draft.py --clean  # 自检前先清空演示数据（demo 前缀）
-
-约定：
-    - 金额一律 Decimal；未知写 None（落库为 NULL），禁止写 0 冒充「已确认」
-    - 时间一律 UTC
-    - 全部参数绑定，无字符串拼 SQL
-    - 这些函数都不 commit；事务由调用方控制（监控任务要把通知登记和状态更新放同一事务）
-"""
+"""PricePilot 数据库读写草稿"""
 
 from __future__ import annotations
 
@@ -41,8 +25,6 @@ IDENTITY_FIELDS = ("brand", "model", "generation", "variant", "storage",
 # 规格指纹至少要有这两项，否则视为「规格不全」，指纹为 NULL、不参与同款合并
 FINGERPRINT_MIN_FIELDS = ("brand", "model")
 
-
-# ---------------------------------------------------------------- 基础工具
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)  # DB 存 naive UTC
@@ -91,8 +73,6 @@ def identity_fingerprint(identity: dict) -> str | None:
     payload = json.dumps(canonical, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-
-# ---------------------------------------------------------------- 写：商品与报价
 
 def save_product(conn, identity: dict, product_id: str | None = None,
                  match_status: str = "same", data_mode: str = "demo") -> str:
@@ -166,15 +146,9 @@ def save_search_result(conn, identity: dict, offer: dict) -> tuple[str, str]:
     return product_id, offer_id
 
 
-# ---------------------------------------------------------------- 写：价格快照
-
 def save_price_snapshot(conn, offer_id: str, quote: dict, sample_batch: str,
                         product_id: str | None = None) -> bool:
-    """追加一条 price_history。返回 True=新写入，False=同批次已存在（重复执行被唯一键挡下）。
-
-    quote 允许缺字段：运费/税未知就传 None，落库为 NULL；费用不完整时 payable_amount 必须是 None。
-    本函数不 commit —— 调用方要和 watch 状态、通知登记放同一事务。
-    """
+    """追加一条 price_history。返回 True=新写入，False=同批次已存在（重复执行被唯一键挡下）。"""
     now = utcnow()
     with conn.cursor() as cur:
         affected = cur.execute(
@@ -220,17 +194,11 @@ def latest_verified_payable(conn, offer_id: str, currency: str = "CNY") -> Decim
     return row[0] if row else None
 
 
-# ---------------------------------------------------------------- 写/读：收藏与监控
-
 def save_watch(conn, user_id: int, product_id: str, target_payable: Decimal | None = None,
                currency: str = "CNY", offer_id: str = "", remind_enabled: bool = False,
                destination: str = "CN", marketplace: str = "CN",
                buyer_context_hash: str = "default") -> str:
-    """收藏 / 开启提醒。
-
-    target_payable=None 且 remind_enabled=False -> 「只收藏」
-    target_payable 有值且 remind_enabled=True  -> 「开启提醒」（阈值按付款金额）
-    """
+    """收藏 / 开启提醒。"""
     if remind_enabled and (target_payable is None or target_payable < 0):
         raise ValueError("开启提醒必须给非负目标付款金额")
     watch_id = _stable_id("w", user_id, product_id, offer_id)
@@ -258,10 +226,7 @@ def save_watch(conn, user_id: int, product_id: str, target_payable: Decimal | No
 
 
 def list_watches(conn, user_id: int) -> list[dict]:
-    """我的关注（C 的页面用）：商品名 / 当前价 / 记录时价格 / 目标价 / 是否监控。
-
-    当前价取该商品最近一条有效价；记录时价格取第一条快照。都为 NULL 时页面显示「暂无数据」。
-    """
+    """我的关注（C 的页面用）：商品名 / 当前价 / 记录时价格 / 目标价 / 是否监控。"""
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -314,16 +279,8 @@ def update_watch(conn, user_id: int, watch_id: str, target_payable: Decimal | No
     return affected == 1
 
 
-# ---------------------------------------------------------------- 适配层：接现在的 Shopify Product
-
 def from_current_product(item: dict) -> tuple[dict, dict]:
-    """把仓库现有 Product（platform/product_id/title/price/currency/image_url/url/seller）
-    映射成 (identity, offer)。
-
-    ⚠ 现在这份数据【凑不出 ProductIdentity】：没有品牌/型号/代际/成色/套装/保修，
-      所以 identity_fingerprint 会是 NULL，products 只落得下残缺身份。
-      这正是沟通内容第 120 行说「先把 Shopify 的规格/价格/币种/链接对应关系修正确认，再接数据库」的原因。
-    """
+    """把仓库现有 Product（platform/product_id/title/price/currency/image_url/url/seller）"""
     identity = {
         "brand": item.get("brand"),
         "model": item.get("model"),
@@ -351,8 +308,6 @@ def from_current_product(item: dict) -> tuple[dict, dict]:
     }
     return identity, offer
 
-
-# ---------------------------------------------------------------- 自检
 
 DEMO_OFFER_ID = "o_selftest0000001"
 DEMO_PRODUCT_ID = "p_selftest0000001"

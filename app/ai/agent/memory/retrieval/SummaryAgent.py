@@ -6,14 +6,7 @@ from app.ai.agent.memory.save.summary_memory import SummaryMemory
 
 
 class SummaryAgent:
-    """摘要记忆：把「旧摘要 + 最近对话」压成一份新的会话摘要。
-
-    摘要的用途是「下次接着聊」——所以它要保住的是：
-      · 用户在找什么（品类、用途、硬性条件）
-      · 预算说到过多少
-      · 已经推荐过什么、用户对哪些表示过兴趣或否定
-    而不是把聊天记录复述一遍。
-    """
+    """摘要记忆：把「旧摘要 + 最近对话」压成一份新的会话摘要。"""
 
     def __init__(self, summary_memory: SummaryMemory):
         self.model = MyModel.get_model()
@@ -66,18 +59,14 @@ class SummaryAgent:
         return self.agent
 
     async def update(self, messages):
-        """messages 是窗口记忆里的消息列表，每项 {'role': 'user'|'ai', 'content': str}。
-
-        注意：user 和 ai 都要收 —— 只收用户提问的话，
-        「助手推荐了什么、用户满不满意」这段关键信息就丢了。
-        """
+        """messages 是窗口记忆里的消息列表，每项 {'role': 'user'|'ai', 'content': str}。"""
         old_summary = await self.summary_memory.query()
 
         lines = []
         for i in messages:
             who = "用户" if i["role"] == "user" else "助手"
             lines.append(f"{who}：{i['content']}")
-        dialogue = chr(10).join(lines)
+        dialogue = '\n'.join(lines)
 
         question = (
             f"【旧摘要】\n{old_summary or '（无）'}\n\n"

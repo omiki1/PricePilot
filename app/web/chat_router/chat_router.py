@@ -19,13 +19,7 @@ def sse(data: dict) -> str:
 
 
 async def _check_session(session_id: str, user_id: str) -> str:
-    """进图前的会话归属校验（omiki 2026-09-29）。
-
-    返回 'ok'（已存在且属于本人，或刚懒创建）/ 'forbidden' / 'deleted' / 'unavailable'（库挂了）。
-    必须在跑图之前做：thread_id = session_id，放行别人的会话 ID 就等于让他读到
-    别人的 LangGraph 检查点和 Redis 窗口记忆。
-    库不可用时只降级为「这轮不落库」，不拦聊天 —— 历史记录是锦上添花，不能拖垮主链路。
-    """
+    """检查归属；数据库不可用时返回 unavailable，本轮不保存历史。"""
     try:
         return await asyncio.to_thread(ensure_session, session_id, user_id)
     except SessionError as exc:
@@ -46,16 +40,7 @@ async def _persist_turn(session_id: str, question: str, answer: str, products) -
 @chat_router.get('/chat')
 async def chat(request: Request, question: str, session_id: str = '',
                user_id: str = Depends(get_current_user_id)):
-    """聊天接口：接收用户输入 → 跑图 → SSE 流式输出。
-    帧类型：
-      {"type": "products", "data": [Product...]} 排名后的商品（recommend 跑完立刻推，约 3~5s）
-      {"type": "text",     "data": "..."}        模型生成的文字（随后流式补上）
-      {"done": true}                             结束标记
-    结束帧的可选字段（新增，老前端忽略即可）：
-      "saved": false                              这一轮已回答但没存进历史
-      "code": "session_forbidden" / "session_deleted"   会话校验没过，这一轮不跑图；data 里是提示文案
-    user_id 仍是 query 参数（前端不用改），但统一经 get_current_user_id 解析，接 token 时只改 deps.py。
-    """
+    """通过 SSE 发送文字、商品和结束状态，并保存本轮记录。"""
     print(f'用户问题{question},用户ID:{user_id}')
     shopping_agent = request.app.state.shopping_agent          # lifespan 里创建好的图
     thread_id = session_id or user_id or "default"             # 会话隔离靠 thread_id

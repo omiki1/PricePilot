@@ -1,8 +1,4 @@
-"""网络搜索取证：给商品找第三方评测（百度千帆 AI 搜索）。
-
-为什么用搜索而不是抓商品页评论：商品页的评论是 JS 后加载的，requests 拿不到正文；
-搜索引擎已经把那些评测页索引好了，还带回链接和发布日期。
-"""
+"""网络搜索取证：给商品找第三方评测（百度千帆 AI 搜索）。"""
 import os
 import re
 
@@ -27,8 +23,7 @@ def make_query(text) -> str:
 
 def search_evidence(text, top_k: int = 9) -> list[dict]:
     """返回证据列表；失败或没结果返回空列表（调用方据此如实降级，不要编造）。"""
-    # 兼容 BAIDU_KEY / BAIDU_API_KEY 两种写法：模板里叫 BAIDU_KEY，
-    # 少数机器上是 BAIDU_API_KEY，两边都认，不因为名字不同就静默不检索。
+    # 兼容 BAIDU_KEY / BAIDU_API_KEY 两种写法：模板里叫 BAIDU_KEY。
     key = os.getenv('BAIDU_KEY') or os.getenv('BAIDU_API_KEY')
     if not key:
         return []

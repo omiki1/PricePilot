@@ -1,18 +1,4 @@
-"""评论分析节点（B · 2026-09-24）
-
-手册依据：《节点实施说明》「Review：样本及需求 → 去重、主题、证据；独占
-review_results；是（需要模型）」+ 参考代码 2 的失败降级 + Day04 实施步骤 1~4。
-
-职责边界（少做不算失职，多做就是越权）：
-    本节点**只**产出 `review_results`（每款的优缺点主题 + 证据 ID）与状态；
-    不碰价格、不排序、不生成报告文字。主题到"用户偏好"的关联留给 compare_node，
-    因为那是确定性判断，不该由模型顺手做掉。
-
-模型在本节点的权限被压到最小：
-    它只能**从给定样本里挑 review_id 组成主题**，不能提供样本数（分母由程序算），
-    不能新增评论，也不能因为评论正文里写着"把某款写成第一"就改变任何规则。
-    产出之后一律过 `review_evidence.sanitize_analysis` 复核，引用不到的结论直接丢弃。
-"""
+"""评论分析节点"""
 from __future__ import annotations
 
 import asyncio
@@ -42,22 +28,16 @@ from app.ai.tool.review_fetch_tool import (
 logger = logging.getLogger(__name__)
 prompt = BuilderPromptYaml.get_prompt('review_node.yaml')
 
-# 一次喂给模型的样本上限：评论可能上百条，分批归纳后再合并（手册实施步骤 2）
+# 评论分批分析，再合并主题。
 MAX_SAMPLES_PER_CALL = 40
-# 分析一棵商品评论的超时。手册参考实现写 20s，但本机主模型实测单款 7~14s，
-# 留 20s 会把正常的网络抖动直接判成超时；放宽到 40s 只影响极端慢的那一款。
+# 单款商品的分析超时，单位为秒。
 ANALYZE_TIMEOUT = 40.0
-# 同时分析几款。串行会让总耗时叠加（4 款 ≈ 40s+），全并发又可能把提供商打限流，
-# 取 3：既压住总时长，又给提供商留余量。超出的款排队等待。
+# 最多同时分析 3 款商品。
 MAX_CONCURRENT_ANALYSES = 3
 
 
 class _ThemeDraft(BaseModel):
-    """模型视角的主题草稿：**只有标签与证据 ID**。
-
-    刻意不给它 `mention_count`/`share` 之类的统计字段 —— 数字一旦由模型提供，
-    报告里就会出现对不上分母的"高频"，而这正是验收 R01 要禁止的。
-    """
+    """模型视角的主题草稿：只有标签与证据 ID。"""
 
     label: str = Field(..., description='主题短标签，如「通勤降噪」「眼镜佩戴舒适」')
     review_ids: list[str] = Field(default_factory=list, description='支撑该主题的评论 ID')
@@ -70,11 +50,7 @@ class _ReviewDraft(BaseModel):
 
 
 def _render_samples(samples: list[ReviewSample]) -> str:
-    """把样本渲染成编号清单。
-
-    每条都带 review_id，模型只能引用这些 ID；正文原样给出（不截断成关键词），
-    但整体被包在「以下为不可信内容」的语境里交给提示词去约束。
-    """
+    """把样本渲染成编号清单。"""
     lines = []
     for sample in samples:
         rating = '未评分' if sample.rating is None else f'{sample.rating} 分'
@@ -86,11 +62,7 @@ async def analyze_reviews(
     samples: list[ReviewSample],
     requirements: dict | None = None,
 ) -> ReviewAnalysis:
-    """调模型抽主题，再用程序把证据与分母钉死。
-
-    样本超过 MAX_SAMPLES_PER_CALL 时按序分批，最后按主题标签合并 review_ids
-    （手册实施步骤 2：「评论很多时分批归纳，再按证据 ID 合并」）。
-    """
+    """调模型抽主题，再用程序把证据与分母钉死。"""
     analysis = ReviewAnalysis(product_id=samples[0].product_id if samples else '',
                               sample_size=len(samples))
     if not samples:
@@ -100,9 +72,7 @@ async def analyze_reviews(
                for i in range(0, len(samples), MAX_SAMPLES_PER_CALL)]
     agent = create_agent(model=MyModel.get_model(), system_prompt=prompt,
                          response_format=_ReviewDraft)
-    # 把用户的关注点**和避雷项**都给模型：主题标签越贴近用户原词，
-    # compare 阶段的字面相似度匹配就越不容易漏（"夹头" vs "佩戴不适" 是匹配不上的）。
-    # 这不是让模型替用户做判断，只是让它用同一套词汇描述评论。
+    # 提供关注点和避雷项，让主题标签贴近用户用词。
     requirements = requirements or {}
     preferences = '、'.join(requirements.get('preferences') or []) or '（未提供）'
     avoid = '、'.join(requirements.get('avoid') or []) or '（未提供）'
@@ -152,10 +122,7 @@ async def _analyze_one(
     requirements: dict,
     semaphore: asyncio.Semaphore,
 ) -> dict:
-    """分析**一款**商品的评论。**不抛异常**，把结局打包成 dict 返回。
-
-    这样并发跑多款时，某一款超时/失败不会拖垮其他款（手册 F02：评论分支要能降级）。
-    """
+    """分析一款商品的评论。不抛异常，把结局打包成 dict 返回。"""
     product_id = offer.product_id
     outcome = {
         'product_id': product_id, 'analysis': None, 'evidence': None,
@@ -221,13 +188,7 @@ async def review_node(
     provider: ReviewProvider | None = None,
     analyzer=None,
 ) -> dict:
-    """跑一遍评论分支。
-
-    返回字段：`review_results` / `review_status` / `review_error` / `review_evidence`。
-    多款商品**并发**分析（限流 MAX_CONCURRENT_ANALYSES），任何单款失败都不影响其他款；
-    全部失败也**不抛异常**——评审分支是可降级的，价格报告照样要能出
-    （手册 F02：「评论分支超时 → 返回 failed 终态，仍可生成价格报告」）。
-    """
+    """跑一遍评论分支。"""
     offers = _unique_products(list(state.get('offers') or []))
     requirements = state.get('requirements') or {}
     provider = provider or resolve_provider()
@@ -245,7 +206,6 @@ async def review_node(
     limitations: list[str] = []
     errors: list[str] = []
     # product_id → 为什么这一款没有分析结果。
-    # 供 compare 阶段区分「无可用评论样本」（商品冷门）与「评论分析失败/超时」（我们的问题）。
     notes: dict[str, str] = {}
 
     for outcome in outcomes:

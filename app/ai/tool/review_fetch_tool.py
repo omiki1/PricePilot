@@ -1,23 +1,4 @@
-"""评论样本获取（B · 2026-09-24）
-
-手册依据：《Day04》「为每款准备或获取评论样本，记录来源、实际数量和采样范围；
-演示评论照样标识」+ V2「Amazon/JD 搜索 API 不自动等于评论正文 API；先记录实际
-review_text 能力」+ 验收 V09。
-
-这个文件的核心不是"怎么抓到评论"，而是**抓不到的时候怎么说话**。三种状态必须分清：
-
-    completed  拿到了样本（可能经过清洗后为 0 条，原因写在报告里）
-    unpermitted  该来源没有评论正文能力 / 未获授权 → 抛 ReviewFetchError
-    failed     网络或解析失败 → 抛 ReviewFetchError
-
-**为什么不能把"没有能力"返回成空列表**：空列表在上层看起来就等于"这个商品没人评论"，
-于是报告会写「暂无评论」—— 用户以为商品冷门，实际是平台根本没给这个接口。
-把"不可获得"伪装成"空采集成功"是验收 V09 明确要禁止的（同理于「未知 ≠ 0」的金额铁律）。
-
-当前项目实际可用的来源：**只有 demo**。Shopify catalog 只给评分与评价条数，
-没有评论正文；Amazon/JD 未接入。所以真实链路上会走到 ReviewFetchError →
-报告标注"评论能力不可用"，而不是编造评论分析。
-"""
+"""评论样本获取"""
 from __future__ import annotations
 
 import asyncio
@@ -29,7 +10,7 @@ from typing import Iterable, Protocol, runtime_checkable
 
 from app.ai.agent.multi_agent.schema.price_schema import ReviewSample
 
-# 单款评论获取的默认超时（手册参考实现用 8s）
+# 单款商品的评论获取超时。
 DEFAULT_FETCH_TIMEOUT = 8.0
 
 # 选评论来源的环境变量：demo / shopify / none
@@ -40,11 +21,7 @@ DEFAULT_DEMO_PATH = _REPO_ROOT / "db" / "demo_reviews.json"
 
 
 class ReviewFetchError(RuntimeError):
-    """评论获取失败或该来源不具备评论能力。
-
-    有意做成受控异常而不是返回空列表：调用方必须显式处理"拿不到"这件事，
-    并把它写进报告的限制说明。手册：「不要把不可获得的评论能力伪装成空采集成功」。
-    """
+    """评论获取失败或该来源不具备评论能力。"""
 
     def __init__(self, message: str, *, source: str = "", reason: str = "unavailable"):
         super().__init__(message)
@@ -54,7 +31,7 @@ class ReviewFetchError(RuntimeError):
 
 @runtime_checkable
 class ReviewProvider(Protocol):
-    """评论来源。约定：没有评论能力时**抛异常**，不要返回空列表。"""
+    """评论来源。约定：没有评论能力时抛异常，不要返回空列表。"""
 
     source: str
 
@@ -63,11 +40,7 @@ class ReviewProvider(Protocol):
 
 
 class UnavailableReviewProvider:
-    """占位来源：明确表示"这个渠道没有评论正文能力"。
-
-    真实链路里 Shopify 就走这里 —— 它只给 `rating` 和 `rating_count`，
-    那是**聚合评分**，不是可引用的评论样本，不能拿它当证据。
-    """
+    """占位来源：明确表示"这个渠道没有评论正文能力"。"""
 
     def __init__(self, source: str = "shopify", detail: str = ""):
         self.source = source
@@ -81,11 +54,7 @@ class UnavailableReviewProvider:
 
 
 class DemoReviewProvider:
-    """演示样本来源：全部带 `data_mode="demo"`，绝不当成真实证据。
-
-    验收 U01 要求演示来源与真实来源在结果上可区分，所以这里的每条样本都强制
-    打上 demo 标记，上层排序也按数据模式分组。
-    """
+    """演示样本来源：全部带 `data_mode="demo"`，绝不当成真实证据。"""
 
     def __init__(self, samples_by_product: dict[str, list[ReviewSample]],
                  source: str = "demo", usage_permitted: bool = True):
@@ -129,11 +98,7 @@ def normalize_raw_reviews(
     source: str = "",
     data_mode: str = "demo",
 ) -> tuple[list[ReviewSample], list[str]]:
-    """把来源返回的原始字典规整成 ReviewSample，返回 (样本, 被跳过的原因)。
-
-    跳过的行要**报出来**而不是静默丢弃：一条少了 review_id 的评论如果被无声丢掉，
-    样本数就悄悄变少，而报告里的分母是用户唯一的判断依据。
-    """
+    """把来源返回的原始字典规整成 ReviewSample，返回 (样本, 被跳过的原因)。"""
     samples: list[ReviewSample] = []
     skipped: list[str] = []
     for index, row in enumerate(raw_reviews or []):
@@ -177,15 +142,7 @@ def load_demo_provider(path: str | Path | None = None) -> DemoReviewProvider:
 
 def resolve_provider(source: str | None = None,
                      demo_path: str | Path | None = None) -> ReviewProvider:
-    """按配置挑评论来源；这是节点默认的取值入口。
-
-    取值顺序：显式参数 → 环境变量 `REVIEW_SOURCE` → 默认 `demo`。
-
-    为什么默认是 demo 而不是某个真实平台：本机真实可用的渠道（Shopify）**没有**
-    评论正文能力，默认成它只会让每次调用都抛异常。默认 demo 让链路可跑通，
-    而每条样本都带 `data_mode="demo"`，报告里照样能一眼认出这是演示数据（U01）。
-    演示集缺失时降级为 Unavailable，绝不返回空集合假装成功。
-    """
+    """按配置挑评论来源；这是节点默认的取值入口。"""
     name = (source or os.environ.get(REVIEW_SOURCE_ENV) or "demo").strip().lower()
     if name == "demo":
         try:
@@ -202,12 +159,7 @@ async def fetch_samples(
     *,
     timeout: float = DEFAULT_FETCH_TIMEOUT,
 ) -> list[ReviewSample]:
-    """异步取样本并施加超时。
-
-    `asyncio.wait_for` 抛的 TimeoutError 在这里转成 ReviewFetchError，
-    让节点只需处理一种异常；同时**不重试**——评论缺失是可降级的，
-    无限重试只会拖垮整轮（手册：「其他来源错误在工具层转成受控异常，不无限重试」）。
-    """
+    """异步取样本并施加超时。"""
     try:
         return await asyncio.wait_for(asyncio.to_thread(provider.fetch, product_id), timeout)
     except asyncio.TimeoutError as exc:

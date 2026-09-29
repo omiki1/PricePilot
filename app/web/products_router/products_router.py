@@ -1,9 +1,4 @@
-"""商品检索路由（只读，跑图取 state["products"]，不复制检索逻辑）。
-  意图识别接口只回一句话，`shopify_search_node` 写进 state 的 products 拿不到。
-  前端要验证 Shopify 接入效果，必须有个把 products 读出来的出口；
-  本文件不重写检索逻辑，只做「跑图 → 读检查点 state → 返回」，
-  与 intent_router 同一套约定（图从 request.app.state 取、没装配就 503）。
-"""
+"""商品检索路由（只读，跑图取 state["products"]，不复制检索逻辑）。"""
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field

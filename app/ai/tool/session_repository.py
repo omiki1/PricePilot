@@ -1,13 +1,4 @@
-"""会话与聊天记录的 MySQL 读写（omiki 2026-09-29）
-
-写法照抄 favorite_repository：每个函数自己拿连接、用完关；SQL 直接写在函数里；
-能预期到的失败统一抛 SessionError，路由层转成 503。时间一律由应用写 UTC（见 schema_mysql.sql 口径）。
-
-归属校验放在这一层做判断、路由层负责翻译成 HTTP 状态码：
-    check_owner(session_id, user_id) -> 'ok' | 'missing' | 'deleted' | 'forbidden'
-⚠️ 这只是临时措施：登录接口目前不发 token，user_id 由前端传，照样可以伪造。
-   等有了真正的 token 鉴权，user_id 应该从 token 里取，而不是信任参数。
-"""
+"""会话与聊天记录的 MySQL 读写"""
 from __future__ import annotations
 
 import json
@@ -86,8 +77,6 @@ def new_session_id() -> str:
     return uuid.uuid4().hex
 
 
-# ------------------------------------------------------------------ 会话
-
 def get_session(session_id: str) -> dict | None:
     """按 ID 取会话（含已软删除的），不存在返回 None。"""
     SQL = "SELECT " + SESSION_COLUMNS + " FROM chat_session WHERE session_id = %s"
@@ -104,10 +93,7 @@ def get_session(session_id: str) -> dict | None:
 
 
 def check_owner(session_id: str, user_id: str) -> str:
-    """归属校验：'ok' | 'missing' | 'deleted' | 'forbidden'。
-
-    先判归属再判删除：别人的会话不管删没删都是 forbidden，不泄露「这个 ID 存在过」以外的信息。
-    """
+    """归属校验：'ok' | 'missing' | 'deleted' | 'forbidden'。"""
     row = get_session(session_id)
     if row is None:
         return "missing"
@@ -138,12 +124,7 @@ def create_session(user_id: str, session_id: str | None = None) -> dict:
 
 
 def ensure_session(session_id: str, user_id: str) -> str:
-    """聊天前调用：会话不存在就按当前用户懒创建，存在就校验归属。
-
-    用 INSERT IGNORE 而不是「先查再插」：两个请求同时拿同一个新 ID 进来时，
-    只有第一个能插进去，第二个随后读到的 owner 不是自己，会被判 forbidden。
-    返回值同 check_owner（懒创建成功也返回 'ok'）。
-    """
+    """聊天前调用：会话不存在就按当前用户懒创建，存在就校验归属。"""
     sid = str(session_id or "")[:SESSION_ID_LIMIT]
     now = _now()
     SQL = ("INSERT IGNORE INTO chat_session (session_id, user_id, title, created_at, updated_at, is_deleted) "
@@ -208,8 +189,6 @@ def delete_session(session_id: str) -> int:
     return int(changed or 0)
 
 
-# ------------------------------------------------------------------ 消息
-
 def list_messages(session_id: str, limit: int = 500) -> list:
     """会话里的消息，按写入顺序（id 正序）。"""
     limit = max(1, min(int(limit or 500), 2000))
@@ -228,11 +207,7 @@ def list_messages(session_id: str, limit: int = 500) -> list:
 
 
 def append_turn(session_id: str, question: str, answer: str, products: list | None) -> None:
-    """一轮问答落库：用户问题 + 助手回答（带本轮最后一次商品帧），同一个事务。
-
-    同时：标题为空时取第一句问题前 20 字；刷新 updated_at（列表排序用）。
-    调用方已经通过 ensure_session 做过归属校验。
-    """
+    """一轮问答落库：用户问题 + 助手回答（带本轮最后一次商品帧），同一个事务。"""
     now = _now()
     products_json = json.dumps(products, ensure_ascii=False) if products else None
     SQL_MSG = ("INSERT INTO chat_message (session_id, role, content, products, created_at) "

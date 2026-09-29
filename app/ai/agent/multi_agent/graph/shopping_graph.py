@@ -16,12 +16,7 @@ from app.ai.agent.multi_agent.state.shopping_state import ShoppingState
 
 logger = logging.getLogger(__name__)
 
-# ── [B 修改 2026-09-23] 四层记忆接线 ──────────────────────────────────────────
-# 分工（别和 Checkpointer 搞混）：
-#   Checkpointer（下面的 InMemorySaver）→ 图的运行状态，进程内，重启即失效；
-#   四层记忆（ConversationManager）    → 跨会话要记住的用户信息，落 Redis/PG/向量库。
-# 记忆是「锦上添花」，所以整个接入是可失败的：import 不到、Redis/PG/向量库任一挂了，
-# 都只降级成「本轮无记忆」，绝不让主链路崩。
+
 try:
     from app.ai.agent.memory import build_memory_block, update_memory
 except Exception as _exc:                       # noqa: BLE001
@@ -34,7 +29,7 @@ _USER_TEXT_NODES = {'output', 'chat', 'clarify'}
 
 
 def route_after_intent(state: ShoppingState) -> str:
-    """intent 之后四选一。search 但没检索词时改走追问，避免空 query 打 Shopify。"""
+    """按意图分流；没有品类时进入追问。"""
     router = (state.get('router') or '').strip()
     category = (state.get('category') or '').strip()
     if router == 'chat':
@@ -46,11 +41,7 @@ def route_after_intent(state: ShoppingState) -> str:
 
 class ShoppingGraph:
     def __init__(self):
-        # 检查点必须实现 BaseCheckpointSaver；原先误用了 torch 的 checkpoint 函数。
-        #
-        # serde 显式登记 Product：state 里的 products / ranked_top 存的是这个自定义类，
-        # 不登记时 LangGraph 会给出「Deserializing unregistered type ... will be blocked
-        # in a future version」的警告，升级后直接变成报错。
+        # 登记 Product 类型，供检查点序列化和恢复。
         self.memory = InMemorySaver(
             serde=JsonPlusSerializer(
                 allowed_msgpack_modules=[
@@ -58,7 +49,7 @@ class ShoppingGraph:
                 ],
             )
         )
-        # [B 修改 2026-09-23] 后台记忆更新任务的强引用，防止被 GC 提前回收
+
         self._background = set()
         self.agent = self.get_agent()
 
@@ -90,18 +81,11 @@ class ShoppingGraph:
         self.agent = graph.compile(checkpointer=self.memory)
         return self.agent
 
-    # ── 四层记忆：取记忆 / 收尾 ──────────────────────────────────────────
-    # 具体实现在 app/ai/agent/memory/__init__.py，这里只管什么时候调。
     async def _build_memory_block(self, user_id, session_id, question: str) -> str:
-        """进图前取四层记忆并拼成一段文本。
-
-        读操作会打 Redis / PG / 向量库，所以丢到线程里跑，别卡住事件循环。
-        """
+        """读取本轮记忆，失败时返回空文本。"""
         if build_memory_block is None:
             return ''
         try:
-            # 直接 await：memory 内部本来就是 async（async redis / async pg），
-            # Chroma 那次同步查询它自己已经 run_in_executor 了。
             block = await build_memory_block(user_id, session_id, question)
             if block:
                 print(f'[memory] 已注入记忆 {len(block)} 字')
@@ -111,14 +95,7 @@ class ShoppingGraph:
             return ''
 
     async def _last_answer(self, config) -> str:
-        """图跑完后从 checkpoint 里取本轮文字答案，用于写回记忆。
-
-        ── [B 修改 2026-09-24] 追问轮必须取 question，不能取 answer ──
-        `answer` 是普通 channel：本轮没跑 output / chat 时它不会更新，会残留
-        上一轮的商品解读。若直接写进 L1，记忆里就会出现「答非所问」的假历史
-        （比如本轮只是追问「想买哪类？」，却被记成一段商品推荐）。
-        clarify / reject 轮用户实际看到的是 state['question']。
-        """
+        """读取本轮回答；追问轮只取 question，避免读到旧答案。"""
         try:
             snapshot = await self.agent.aget_state(config)
             values = snapshot.values or {}
@@ -131,11 +108,7 @@ class ShoppingGraph:
             return ''
 
     async def _finish_turn(self, user_id, session_id, question: str, answer: str) -> None:
-        """收尾：写 L1 窗口 + 更新 L2/L3/L4。
-
-        整件事丢后台 task：L2/L3/L4 都要调模型，跑起来几秒到十几秒，
-        同步等会把 SSE 的 done 帧一起拖住。
-        """
+        """后台更新记忆，不阻塞聊天结束。"""
         if update_memory is None:
             return
         messages = [{'role': 'user', 'content': question}]
@@ -144,7 +117,7 @@ class ShoppingGraph:
         task = asyncio.create_task(
             self._update_memory(user_id, session_id, question, messages)
         )
-        # 强引用：不存着的话 task 可能被 GC 提前回收，记忆更新就悄悄不跑了
+        # 保存任务引用，完成后自动移除。
         self._background.add(task)
         task.add_done_callback(self._background.discard)
 

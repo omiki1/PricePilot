@@ -1,14 +1,4 @@
-"""路由公共依赖：当前用户身份（omiki 2026-09-29）
-
-所有新接口（会话管理、首页推荐、聊天落库）都通过 Depends(get_current_user_id) 拿「当前是谁」，
-路由里不再自己读 user_id 参数。
-
-⚠️ 现状是临时方案：登录接口还不发 token，这里只是从请求里读前端传的 user_id
-（先看 query 参数，再看 JSON body），**任何人都可以伪造**。
-接入 token 鉴权时只改这一个函数：从 Authorization 头解析 token → 校验 → 返回其中的 user_id，
-调用方（路由、归属校验、落库）一行都不用动。测试里也可以用
-app.dependency_overrides[get_current_user_id] 直接换身份。
-"""
+"""统一读取用户 ID。目前由前端提供，尚未实现 token 鉴权。"""
 from fastapi import HTTPException, Query, Request
 
 USER_ID_MAX = 64
