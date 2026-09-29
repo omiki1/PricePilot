@@ -1,18 +1,4 @@
-"""对比报告子图（B · 2026-09-24）
-
-手册依据：《Day04》「串行跑通后再决定是否并行 Price/Review。若并行，验证任一分支
-失败时能汇合且 Compare 只执行一次」+ F01/F02。
-
-**为什么先做成独立子图，而不是直接改主图**：
-    主图（intent → shopify_search → recommend → output）是现在能跑通的链路，
-    它没有 `compare` 这个动作 —— 那要动 IntentSchema 的动作集合（属 A 的合同，
-    且是加功能不是修 bug）。在动作集合定下来之前改主图，等于把一个还没验证的
-    分支塞进线上路径。所以这里先串行跑通：`prepare → review → compare → reporter`
-    四个节点独立可测，将来接进主图只需要加一条 conditional edge。
-
-顺序是**刻意串行**的：review 要在 compare 之前（排序依赖有证据的偏好命中数），
-compare 要在 reporter 之前（解释只能描述已定稿的排序）。并行化留到验证过失败汇合之后。
-"""
+"""商品对比子图：报价、评论、比较、报告。"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -28,12 +14,7 @@ from app.ai.tool.price_calculator import calculate_quote
 
 
 async def prepare_node(state: ShoppingState) -> dict:
-    """把商品绑成报价，并跑出价格计算结果。
-
-    这一步对应手册里的 Normalize + Price 两个职责，先合并成一个节点：
-    当前链路只有单一来源（Shopify）、没有归一层，拆成两个节点只会多一次状态搬运。
-    等到接入第二个平台、需要真正的同款合并时，再把它拆开。
-    """
+    """把商品绑成报价，并跑出价格计算结果。"""
     requirements = state.get('requirements') or {}
     products = list(state.get('products') or [])
     offers, skipped = offers_from_products(
@@ -118,13 +99,7 @@ async def run_comparison(
     review_provider=None,
     analyzer=None,
 ) -> dict:
-    """跑一次完整对比，返回含 `final_report` / `comparison_result` 的状态。
-
-    三条入口，用途不同：
-      reviews 传入        → 直接算 compare + reporter，不碰模型、不碰网络（单测用）
-      provider/analyzer   → 手算四个节点（单测用假评论源或假分析器时用）
-      什么都不传          → 走编译好的子图（探针 / 真实链路用）
-    """
+    """运行对比；可传入评论结果或测试用的评论源和分析器。"""
     state: dict = {
         'requirements': requirements or {},
         'products': list(products or []),
@@ -151,12 +126,11 @@ async def run_comparison(
 
     if review_provider is not None or analyzer is not None:
         # 图节点无法接收额外参数，所以这条路径按同样的顺序手算一遍
-        current = state | await prepare_node(state)
-        current = current | await review_node(current, provider=review_provider,
-                                              analyzer=analyzer)
-        current = current | await compare_stage_node(current)
-        current = current | await reporter_stage_node(current)
-        return current
+        state.update(await prepare_node(state))
+        state.update(await review_node(state, provider=review_provider, analyzer=analyzer))
+        state.update(await compare_stage_node(state))
+        state.update(await reporter_stage_node(state))
+        return state
 
     return await get_comparison_agent().ainvoke(state)
 

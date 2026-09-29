@@ -4,16 +4,7 @@ from app.ai.tool.mysql_tool import MySQL
 
 
 class UserDao:
-    """用户 DAO。密码用 bcrypt 直接哈希，不经 passlib。
-
-    为什么不用 passlib.CryptContext：
-        passlib 1.7.4 与 bcrypt >= 4.1 不兼容 —— passlib 初始化时会跑一次
-        bug 探测（handlers/bcrypt.py 的 detect_wrap_bug），它调 _bcrypt.hashpw
-        传了一个超长字符串，而新版 bcrypt 直接抛：
-            ValueError: password cannot be longer than 72 bytes
-        结果注册/登录全挂，而 service 层把异常吞了，只显示"注册失败"。
-        直接用 bcrypt 没有这层，行为也更可控。
-    """
+    """用户 DAO。密码用 bcrypt 直接哈希，不经 passlib。"""
 
     # bcrypt 只取前 72 字节；本项目的密码规则是 8~16 位字母数字，不会触及上限。
     _MAX_BYTES = 72
@@ -34,7 +25,7 @@ class UserDao:
 
     @staticmethod
     def check_email(email):
-        """按邮箱查用户。只取需要的列 —— 原来 SELECT * 会把 password_hash 一起捞出来。"""
+        """按邮箱查询用户。"""
         conn = MySQL.get_conn()
         cur = conn.cursor()
         cur.execute(

@@ -13,8 +13,7 @@ class FavoriteItem(BaseModel):
     time: str = Field(default="", description="收藏时刻")
 
 class FavoriteProduct(BaseModel):
-    """收藏时前端回传的商品快照。
-    """
+    """收藏时前端回传的商品快照。"""
     model_config = ConfigDict(extra="ignore")
     product_id: str = Field(..., min_length=1, max_length=191, description="来源商品 ID")
     title: str = Field(default="", max_length=512, description="商品名称")

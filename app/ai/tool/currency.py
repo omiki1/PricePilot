@@ -1,18 +1,4 @@
-"""汇率换算与人民币展示（主笔：B，2026-09-24）
-
-用途：Shopify 商品价是美元，前端要同时显示人民币，格式形如
-    USD 56.98 / 人民币 ≈ ¥383.16
-
-金额铁律（和 price_calculator 一致）：
-    1. 一律 Decimal，**禁 float 参与运算**。金额先 str() 再转 Decimal，
-       绝不 round(float)，否则 56.98 * 6.72 会带出浮点尾差。
-    2. 拿不到实时汇率时用 .env 的兜底汇率，并且在文案上标明是估算，
-       不把估算价伪装成实时价。
-
-汇率来源：open.er-api.com 免费接口（USD 为基准，返回各国汇率）。
-为什么自己建 no-proxy opener：项目里反复踩过环境代理变量（http_proxy 指向
-127.0.0.1 动态端口）把请求打挂的坑，这里显式绕开环境代理，避免同类问题。
-"""
+"""用 Decimal 换算和展示价格；汇率不可用时使用配置的估算值。"""
 from __future__ import annotations
 
 import json
@@ -86,11 +72,7 @@ def rates_snapshot() -> tuple[dict[str, Decimal] | None, bool]:
 
 
 def cny_per(currency: str) -> tuple[Decimal | None, bool]:
-    """1 单位 currency 等于多少人民币。返回 (汇率, 是否实时)。
-
-    坑：接口是以 USD 为基准的，所以任意币种换人民币要算 CNY汇率 / 该币种汇率，
-    不能直接拿 USD 的 CNY 值去乘别的币种金额。
-    """
+    """换算为人民币：USD 基准表中的 CNY 汇率除以目标币种汇率。"""
     currency = (currency or "USD").upper()
     rates, live = rates_snapshot()
     if rates:
@@ -160,17 +142,7 @@ def rate_note() -> str:
 
 
 def enrich_product(item: dict) -> dict:
-    """给商品 dict 补上人民币展示字段。不改变原有字段，纯增量。
-
-    加两个键：
-        price_text  —— 「USD 56.98 / 人民币 ≈ ¥383.16」，前端直接渲染
-        price_cny   —— 人民币数值（单值）或 [下限, 上限]（区间），供需要计算的场景用
-
-    注意 price_cny 刻意转成 float：这个字段要进 SSE 的 json.dumps，
-    Decimal 不是 JSON 原生类型会直接抛 TypeError（而且 Decimal 的两位小数
-    在 repr 里还会被序列化成字符串）。它只是展示用副本，
-    **真正的金额计算仍走 price_calculator 的 Decimal**，不要把这里当钱用。
-    """
+    """补充展示价格；price_cny 的浮点值仅用于展示，不参与金额计算。"""
     if not isinstance(item, dict):
         return item
     currency = item.get("currency") or "USD"

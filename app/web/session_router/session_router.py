@@ -1,19 +1,4 @@
-"""会话管理接口（omiki 2026-09-29）
-
-main.py 以 prefix='/api' 注册，实际路径：
-    POST   /api/sessions                      {user_id}          → 新建会话
-    GET    /api/sessions?user_id=             → 列表（未删除，updated_at 倒序）
-    GET    /api/sessions/{id}/messages?user_id=                  → 聊天记录（含商品卡）
-    PATCH  /api/sessions/{id}                 {user_id, title}   → 重命名
-    DELETE /api/sessions/{id}?user_id=        → 软删除（收藏夹不受影响）
-
-当前用户：一律通过 Depends(get_current_user_id)（app/web/deps.py）拿，路由里不直接读 user_id 参数。
-归属校验：带 {id} 的接口都先查 chat_session.user_id，和当前用户不一致返回 403。
-⚠️ 临时措施：登录不发 token，get_current_user_id 目前读的是前端传的 user_id、可以伪造；
-   接入 token 后只改 deps.py 那一个函数。
-
-路由函数用普通 def：pymysql 是同步库，FastAPI 会把 def 放进线程池，不卡事件循环。
-"""
+"""会话增删查改，访问记录前检查归属。"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.ai.agent.multi_agent.schema.session_schema import (
