@@ -1,13 +1,4 @@
-"""四层记忆只读体检 —— 不写入、不调用 LLM。
-
-用途：对话跑完怀疑「记忆到底有没有生效」时，先跑这个把 Redis / PG / 向量库
-的真实状态摊开看，比翻日志快。
-
-    python tools/memory_probe.py            # 只扫 .env 配置的库
-    python tools/memory_probe.py --all      # 额外扫 Redis 0~7 号库，排查数据落错库
-
-主笔：B（2026-09-24）
-"""
+"""四层记忆只读体检 —— 不写入、不调用 LLM。"""
 from __future__ import annotations
 
 import argparse

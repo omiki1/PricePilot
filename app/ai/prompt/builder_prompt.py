@@ -3,8 +3,7 @@ import yaml
 
 
 class BuilderPromptYaml:
-    """把 YAML 提示词拼成一段文本。
-    """
+    """把 YAML 提示词拼成一段文本。"""
 
     @staticmethod
     def get_prompt(file_name: str) -> str:

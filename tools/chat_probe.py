@@ -1,20 +1,4 @@
-"""聊天链路冒烟探针（B · 2026-09-24）
-
-一条命令跑完"前端 → 后端 → 图 → 四层记忆"整条链路，把每轮的商品和回复打出来。
-排查"识别错品类 / 漏掉价格偏好 / 追问丢了主语"这类问题时，比手工点前端快得多。
-
-用法（先启动后端 `python -m app.main`，默认 8008）：
-    cd D:\\TechAgentStu\\PricePilot
-    D:\\Anaconda3\\envs\\agent_env\\python.exe tools\\chat_probe.py "米哈游的产品" "便宜的秋季外套"
-    D:\\Anaconda3\\envs\\agent_env\\python.exe tools\\chat_probe.py --session s1 --user u1 "便宜的外套"
-
-多句 = 同一个会话的连续多轮（session_id 不变），用于验证上下文继承 / 换话题。
-配合后端日志看判定依据：
-    [intent] router=... category='autumn jacket' price=0.0 price_pref='cheap'
-    [shopify_search] query='autumn jacket' price_pref='cheap' 本地复核={...}
-
-注意：本地 curl/requests 必须绕开会话注入的 http_proxy，否则连接会被代理劫持。
-"""
+"""聊天链路冒烟探针"""
 from __future__ import annotations
 
 import argparse

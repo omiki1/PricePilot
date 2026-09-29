@@ -1,17 +1,4 @@
-"""四层记忆（app/ai/agent/memory）。
-
-    L1 窗口   Redis List    最近若干条原文
-    L2 摘要   PostgreSQL    一次会话一份，UPSERT 覆盖
-    L3 长期   向量库        跨会话偏好，语义检索
-    L4 画像   Redis Hash    结构化属性
-
-对外只暴露两个东西：
-    build_memory_block(user_id, session_id, question)  取记忆 -> 拼成一段文本
-    update_memory(user_id, session_id, question)       跑完一轮后更新 L2/L3/L4
-
-调用方是 shopping_graph：进图前取、跑完写。
-记忆是增强项不是依赖项 —— 这里任何一层挂了都只返回空串，主链路照常。
-"""
+"""四层记忆（app/ai/agent/memory）。"""
 
 from app.ai.agent.memory.manager.session_manager import SessionManager
 from app.ai.agent.memory.manager.memory_manager import MemoryManager
@@ -42,11 +29,7 @@ async def build_memory_block(user_id: str, session_id: str, question: str) -> st
 
 
 async def update_memory(user_id: str, session_id: str, question: str, messages: list) -> dict:
-    """跑完一轮后更新记忆。
-
-    messages 是窗口记忆里的原始消息（每项 {'role','content'}），先按顺序写进 L1，
-    再让 MemoryManager 基于窗口内容更新 L2/L3/L4。
-    """
+    """跑完一轮后更新记忆。"""
     sm = _make(user_id, session_id)
     if sm is None:
         return {}

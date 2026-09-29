@@ -1,23 +1,4 @@
-"""对比报告冒烟探针（B · 2026-09-24）
-
-一条命令跑完「商品 → 报价 → 评论证据 → 确定性比较 → 报告」整条流水线，
-把卡片、排序依据、样本口径和限制说明都打出来。调模型只发生在最后一步（写解释），
-用 `--no-explanation` 可以完全离线跑。
-
-用法：
-    cd D:\\TechAgentStu\\PricePilot
-    # 演示数据（默认）：4 款耳机 + 演示评论集，能一次看到"预算内 / 超预算 / 硬约束排除"三种结局
-    D:\\Anaconda3\\envs\\agent_env\\python.exe tools\\compare_probe.py
-    # 不调模型，只看结构化报告
-    D:\\Anaconda3\\envs\\agent_env\\python.exe tools\\compare_probe.py --no-explanation
-    # 拿线上检索结果来比（评论能力不可用时会如实降级并写进限制说明）
-    D:\\Anaconda3\\envs\\agent_env\\python.exe tools\\compare_probe.py --live "头戴式耳机"
-
-看输出时先看这三处，它们是这个模块的全部承诺：
-    「口径」——币种/目的地/数据模式不同就不放在一起比；
-    「排序依据」——有证据支持的偏好数 → 金额 → 稳定 ID，不含模型意见；
-    「限制」——样本不足、金额未核验、被排除的原因，一条都不省略。
-"""
+"""对比报告冒烟探针"""
 from __future__ import annotations
 
 import argparse
@@ -60,16 +41,7 @@ DEMO_REQUIREMENTS = {
 
 
 def _assume_shipping(offers: list[Offer]) -> list[Offer]:
-    """演示用：假设包邮且无额外税费。
-
-    真实链路里运费/税费未知时付款金额就是 None（这是特性）。演示时如果不给，
-    报告里所有金额都会是"暂不可核验"，看不到"已核验付款金额"的样子，
-    所以这里显式假设一次，并在输出里写清楚这是假设。
-
-    注意必须写 `Decimal("0.00")`：`model_copy(update=...)` **不做校验**，
-    塞个 int 0 进去会一路溜到 `checked_amount` 才炸（`'int' object has no
-    attribute 'is_finite'`）—— 金额字段永远只给 Decimal。
-    """
+    """演示用：假设包邮且无额外税费。"""
     zero = Decimal('0.00')
     return [offer.model_copy(update={"shipping": offer.shipping if offer.shipping is not None else zero,
                                      "tax": offer.tax if offer.tax is not None else zero})
@@ -200,8 +172,7 @@ def main() -> int:
             products=products, requirements=requirements,
             review_provider=None, analyzer=None))
         if not args.live:
-            # 默认走真实子图：offer_builder 不猜运费/税费（未知就是未知），
-            # 所以付款金额会是"暂不可核验"，排序退回标价口径。
+            # 默认走真实子图：offer_builder 不猜运费/税费（未知就是未知）。
             note += ' 运费/税费未提供，付款金额暂不可核验，排序按商品标价口径。'
         if output.get('prepare_notes'):
             note = (note + ' ' if note else '') + '跳过：' + '；'.join(output['prepare_notes'])
@@ -214,11 +185,7 @@ def main() -> int:
 
 
 def _load_demo_reviews(product_ids: list[str]):
-    """离线路径也要有评论结论，否则"有证据的排序"展示不出来。
-
-    这里直接对演示样本套用**固定主题**（不调模型），主题里的 review_id 仍然取自
-    真实样本集合 —— 所以"引用不存在的 ID 会被丢弃"这条仍然在被检验。
-    """
+    """离线路径也要有评论结论，否则"有证据的排序"展示不出来。"""
     from app.ai.agent.multi_agent.schema.price_schema import (
         ReviewAnalysis, ReviewTheme,
     )

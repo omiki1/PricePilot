@@ -1,19 +1,4 @@
-"""四层记忆 · 真实端到端演示（B）
-
-和 app/tests/test_memory.py 的区别：
-    测试用假模型（不联网、结果确定）；本脚本用 .env 里配的真实模型跑真对话，
-    用来看「记忆真的记住了没有」。会消耗 token，手动运行即可，不进测试集。
-
-前置：
-    Redis  localhost:6379        （L1 / L4）
-    PostgreSQL localhost:5432    （L2，表会自动创建）
-    .env 里 GLM_API_KEY / BASE_URL 可用（L3 嵌入 + 记忆提取）
-
-运行：
-    cd D:\\TechAgentStu\\PricePilot
-    D:\\Anaconda3\\envs\\agent_env\\python.exe -m tools.memory_demo
-    # 加 --fresh 先清掉本脚本用的演示用户/会话再跑
-"""
+"""四层记忆 · 真实端到端演示"""
 from __future__ import annotations
 
 import argparse
@@ -26,8 +11,7 @@ from app.ai.memory import ConversationManager
 DEMO_USER = "demo-user-memory"
 DEMO_SESSION = "demo-session-memory"
 
-# 四轮对话：第 1 轮交代身份与偏好（L4/L3），后面几轮继续聊，
-# 凑够 SUMMARY_TRIGGER_MESSAGES（默认 8 条 = 4 轮）触发 L2 摘要
+# 四轮对话：第 1 轮交代身份与偏好（L4/L3），后面几轮继续聊。
 SCRIPT = [
     ("我叫小王，住在深圳，是 Python 后端工程师。买耳机只买黑色，预算一般卡在 1500 以内。",
      "记住了：黑色、预算 1500 以内。"),

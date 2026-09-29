@@ -2,10 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# 意图动作。收藏不在这里：收藏是前端按钮直接调 REST（POST /api/favorites），
-# 不走模型、不进对话，所以对话动作目前只有 search 一种。
-# 手册里的 compare/price/track 尚未落地，扩展时在这里加，
-# 不要在各节点各写一份字面量。
+# 意图动作。
 ActionLiteral = Literal["search"]
 
 
@@ -13,9 +10,8 @@ class ShopifySearchInput(BaseModel):
     query: str
     min_price: int | None = None
     max_price: int | None = None
-    # ── [B 修改 2026-09-24] 定性价格偏好（'' / cheap / premium）────────────
+
     # max_price 只能表达"有多少钱"，表达不了"想买便宜的"。
-    # 没有数字预算时它是唯一的省钱信号，交给 filter_products_by_budget 做相对收窄。
     price_pref: str = ''
 
 
