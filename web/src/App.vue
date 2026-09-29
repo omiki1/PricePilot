@@ -1,15 +1,22 @@
 <script setup>
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import {
   addFavorite,
+  createSession,
+  deleteSession,
   fetchFavorites,
-  fetchHealth,
   fetchPriceHistory,
+  fetchSessionMessages,
+  fetchSessions,
   openChat,
   removeFavorite,
+  renameSession,
 } from './api.js'
 import { renderMarkdown } from './markdown.js'
 import LoginView from './LoginView.vue'
+import HomeRecs from './HomeRecs.vue'
+import SessionSidebar from './SessionSidebar.vue'
+import { EMPTY_STATE, ERRORS, FAVORITES, SIDEBAR, autoTitle, cardQuestion } from './ui_copy.js'
 
 // ---- 登录态 ----
 // 存 localStorage，刷新页面不用重登。
@@ -29,9 +36,10 @@ function loadStoredUser() {
 const currentUser = ref(loadStoredUser())
 // 登录后 userId 用后端的 user_id（收藏归属跟着账号走）；未登录时用占位值
 const userId = ref(currentUser.value ? String(currentUser.value.user_id) : 'u001')
-const sessionId = ref('s001')
+// 会话 ID：空串 = 新对话草稿（还没发第一句，后端还没有这条会话）。
+// 发第一句时才 POST /api/sessions 拿 ID，避免点「新建对话」就在列表里堆一排空会话。
+const sessionId = ref('')
 const input = ref('')
-const showSettings = ref(false)
 
 // ---- 收藏 ----
 // showFavorites 这个名字来自 style.css 的注释：收藏栏只在它为真时渲染，不占位
@@ -46,10 +54,22 @@ const pricePanels = reactive({})
 
 const messages = ref([])          // {role, text, products, streaming, error, showAll}
 const sending = ref(false)
-const health = ref(null)
 const scrollRef = ref(null)
 const textareaRef = ref(null)
 const failedImages = reactive(new Set())
+
+// ---- 会话栏 ----
+const sessions = ref([])
+const sessionsLoading = ref(false)
+const sessionsError = ref(false)
+const threadLoading = ref(false)
+const threadNotice = ref('')          // 打开会话失败时显示在空白页上方
+// 宽屏默认展开，窄屏默认收起（浮层）
+const sidebarOpen = ref(typeof window === 'undefined' ? true : window.innerWidth > 900)
+const toast = ref('')
+let toastTimer = null
+
+const favoriteIds = computed(() => favorites.value.map((item) => item.product_id))
 
 const samples = [
 ]
@@ -82,24 +102,163 @@ function autoGrow() {
   el.style.height = `${Math.min(el.scrollHeight, 168)}px`
 }
 
-function onSend() {
-  const question = input.value.trim()
+// ---------- 会话 ----------
+
+function sessionKey(uid = userId.value) {
+  return `pricepilot.session.${uid}`
+}
+
+/** 当前会话 ID 按用户存 localStorage：刷新页面回到同一段对话，换账号互不串。 */
+function rememberSession(id) {
+  try {
+    if (id) localStorage.setItem(sessionKey(), id)
+    else localStorage.removeItem(sessionKey())
+  } catch (exception) {
+    // 隐私模式写不了，不影响使用
+  }
+}
+
+function storedSession() {
+  try {
+    return localStorage.getItem(sessionKey()) || ''
+  } catch (exception) {
+    return ''
+  }
+}
+
+function showToast(text) {
+  toast.value = text
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toast.value = '' }, 2600)
+}
+
+function isNarrow() {
+  return typeof window !== 'undefined' && window.innerWidth <= 900
+}
+
+async function loadSessions({ quiet = false } = {}) {
+  if (!quiet) sessionsLoading.value = true
+  try {
+    const data = await fetchSessions({ userId: userId.value })
+    sessions.value = data.sessions || []
+    sessionsError.value = false
+  } catch (error) {
+    sessionsError.value = true
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+/** 历史消息行 → 线程里的消息对象（和实时收到的结构一致，商品卡直接复用原渲染）。 */
+function toThreadMessage(row) {
+  if (row.role === 'user') return { role: 'user', text: row.content || '' }
+  return reactive({
+    role: 'assistant', text: row.content || '', products: row.products || [],
+    streaming: false, error: '', showAll: false,
+  })
+}
+
+async function openSession(id) {
+  if (sending.value || !id) return
+  if (isNarrow()) sidebarOpen.value = false
+  if (id === sessionId.value && messages.value.length) return
+  threadLoading.value = true
+  threadNotice.value = ''
+  messages.value = []
+  sessionId.value = id
+  try {
+    const data = await fetchSessionMessages({ userId: userId.value, sessionId: id })
+    // 加载期间又点了别的会话：丢掉这次结果
+    if (sessionId.value !== id) return
+    messages.value = (data.messages || []).map(toThreadMessage)
+    rememberSession(id)
+    scrollToBottom(true)
+  } catch (error) {
+    if (sessionId.value !== id) return
+    threadNotice.value = error.status === 403 ? ERRORS.forbidden : ERRORS.openFailed
+    sessionId.value = ''
+    rememberSession('')
+    if (error.status === 404) loadSessions({ quiet: true })
+  } finally {
+    threadLoading.value = false
+  }
+}
+
+function newChat() {
+  if (sending.value) return
+  sessionId.value = ''
+  messages.value = []
+  threadNotice.value = ''
+  rememberSession('')
+  if (isNarrow()) sidebarOpen.value = false
+  nextTick(() => textareaRef.value?.focus())
+}
+
+async function onRenameSession({ id, title }) {
+  const target = sessions.value.find((item) => item.session_id === id)
+  const before = target ? target.title : null
+  if (target) target.title = title           // 先改界面，失败再改回来
+  try {
+    await renameSession({ userId: userId.value, sessionId: id, title })
+    loadSessions({ quiet: true })
+  } catch (error) {
+    if (target) target.title = before
+    showToast(error.status === 403 ? ERRORS.forbidden : ERRORS.actionFailed)
+  }
+}
+
+async function onDeleteSession(id) {
+  try {
+    await deleteSession({ userId: userId.value, sessionId: id })
+    sessions.value = sessions.value.filter((item) => item.session_id !== id)
+    if (id === sessionId.value) newChat()
+    showToast(SIDEBAR.deleted)
+  } catch (error) {
+    showToast(error.status === 403 ? ERRORS.forbidden : ERRORS.actionFailed)
+  }
+}
+
+/** 发第一句前拿会话 ID：优先后端建；后端/库不可用时本地生成，聊天接口会懒创建。 */
+async function ensureSessionId(question) {
+  if (sessionId.value) return sessionId.value
+  let id = ''
+  try {
+    id = (await createSession({ userId: userId.value })).session_id
+  } catch (error) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/-/g, '')
+  }
+  sessionId.value = id
+  rememberSession(id)
+  // 列表里先放一条，等这一轮结束再从后端刷新真实标题和时间
+  if (!sessions.value.some((item) => item.session_id === id)) {
+    const now = new Date().toISOString()
+    sessions.value = [{ session_id: id, title: autoTitle(question), updated_at: now, created_at: now },
+      ...sessions.value]
+  }
+  return id
+}
+
+async function onSend(text) {
+  const question = (typeof text === 'string' ? text : input.value).trim()
   if (!question || sending.value) return
 
   sending.value = true
+  threadNotice.value = ''
   messages.value.push({ role: 'user', text: question })
   const reply = reactive({
-    role: 'assistant', text: '', products: [], streaming: true, error: '', showAll: false,
+    role: 'assistant', text: '', products: [], streaming: true, error: '', warn: '', showAll: false,
   })
   messages.value.push(reply)
   input.value = ''
   nextTick(autoGrow)
   scrollToBottom(true)
 
+  const activeSession = await ensureSessionId(question)
+
   openChat({
     question,
     userId: userId.value,
-    sessionId: sessionId.value,
+    sessionId: activeSession,
     onText: (chunk) => {
       reply.text += chunk
       scrollToBottom()
@@ -108,13 +267,32 @@ function onSend() {
       reply.products = products
       scrollToBottom()
     },
-    onError: (detail) => {
-      reply.error = detail
+    onError: (detail, code) => {
+      // 带 code 的结束帧由 onEnd 换成 ui_copy 里的文案
+      if (!code) reply.error = detail
+    },
+    onEnd: ({ code, saved }) => {
+      if (code === 'session_forbidden' || code === 'session_deleted') {
+        reply.error = code === 'session_forbidden' ? ERRORS.forbidden : ERRORS.openFailed
+        // 这个 ID 不能再用了：下一句自动开新会话
+        if (sessionId.value === activeSession) {
+          sessionId.value = ''
+          rememberSession('')
+        }
+        sessions.value = sessions.value.filter((item) => item.session_id !== activeSession)
+        return
+      }
+      if (code === 'stream_broken') {
+        reply.error = ERRORS.streamBroken
+        return
+      }
+      if (!saved) reply.warn = ERRORS.saveFailed
     },
     onDone: () => {
       reply.streaming = false
       sending.value = false
       scrollToBottom()
+      loadSessions({ quiet: true })
     },
   })
 }
@@ -124,6 +302,11 @@ function onKeydown(event) {
     event.preventDefault()
     onSend()
   }
+}
+
+/** 推荐卡：把商品名填进输入框，用户补一句想问什么再发。 */
+function pickRecommendation(product) {
+  useSample(cardQuestion(product.title))
 }
 
 function useSample(text) {
@@ -291,17 +474,25 @@ function toggleFavorites() {
 }
 
 onMounted(async () => {
-  try {
-    health.value = await fetchHealth()
-  } catch (exception) {
-    health.value = { status: 'unreachable', error: exception.message }
-  }
   // 已登录才拉收藏：未登录时收藏接口拿不到 user_id，拉了也是空的
   if (currentUser.value) {
     loadFavorites()
+    await restoreSession()
   }
   textareaRef.value?.focus()
 })
+
+/** 进页面 / 登录后：拉会话列表，上次停留的会话还在就打开它，否则停在新对话页。 */
+async function restoreSession() {
+  await loadSessions()
+  const stored = storedSession()
+  if (stored && sessions.value.some((item) => item.session_id === stored)) {
+    await openSession(stored)
+  } else {
+    sessionId.value = ''
+    rememberSession('')
+  }
+}
 
 // ---- 登录 / 退出 ----
 async function onLoggedIn(user) {
@@ -318,7 +509,11 @@ async function onLoggedIn(user) {
   messages.value = []
   favorites.value = []
   favError.value = ''
+  sessions.value = []
+  sessionId.value = ''
+  threadNotice.value = ''
   loadFavorites()
+  restoreSession()
   nextTick(() => textareaRef.value?.focus())
 }
 
@@ -334,6 +529,9 @@ function logout() {
   favorites.value = []
   favError.value = ''
   showFavorites.value = false
+  sessions.value = []
+  sessionId.value = ''
+  threadNotice.value = ''
 }
 </script>
 
@@ -344,24 +542,26 @@ function logout() {
   <!-- 已登录：聊天主界面 -->
   <div v-else class="page">
     <header class="topbar">
+      <button
+        class="sidebar-toggle"
+        type="button"
+        :title="sidebarOpen ? SIDEBAR.collapse : SIDEBAR.expand"
+        :aria-label="sidebarOpen ? SIDEBAR.collapse : SIDEBAR.expand"
+        @click="sidebarOpen = !sidebarOpen"
+      >
+        <span></span><span></span><span></span>
+      </button>
       <div class="brand">
         <h1>PricePilot</h1>
-        <span class="tagline">购物助手 · 意图识别 → 商品检索 → 推荐</span>
       </div>
       <div class="topbar-right">
-        <span class="badge" :class="health && health.status === 'ok' ? 'badge-ok' : 'badge-bad'">
-          后端{{ health ? (health.status === 'ok' ? '正常' : health.status) : '检测中' }}
-        </span>
         <button class="settings-toggle" type="button" @click="toggleFavorites">
           {{ showFavorites ? '收起收藏夹' : '收藏夹' }}{{ favorites.length ? ` ${favorites.length}` : '' }}
         </button>
-        <button class="settings-toggle" type="button" @click="showSettings = !showSettings">
-          {{ showSettings ? '收起设置' : '会话设置' }}
-        </button>
         <button
-          class="settings-toggle"
+          class="settings-toggle ghost"
           type="button"
-          :title="'user_id = ' + userId"
+          :title="'退出登录（' + userId + '）'"
           @click="logout"
         >
           退出（{{ currentUser.username }}）
@@ -369,94 +569,43 @@ function logout() {
       </div>
     </header>
 
-    <div v-if="showSettings" class="settings">
-      <label class="field">
-        <span>用户 ID（登录后由账号决定，改这里不会切收藏夹）</span>
-        <input v-model="userId" type="text" readonly />
-      </label>
-      <label class="field">
-        <span>会话 ID（同一 ID 共享图状态）</span>
-        <input v-model="sessionId" type="text" />
-      </label>
-    </div>
-
-    <!-- 聊天区与收藏栏并排：.main 是 flex 容器，收藏栏在左（CSS 里是 border-right） -->
+    <!-- 左：会话栏；中：聊天线程 + 输入框；右：收藏夹抽屉（浮层，不挤压聊天区） -->
     <div class="main">
-      <aside v-if="showFavorites" class="fav-side">
-        <div class="fav-side-head">
-          <h3>收藏夹{{ favorites.length ? `（${favorites.length}）` : '' }}</h3>
-          <button class="fav-side-close" type="button" title="收起" @click="showFavorites = false">×</button>
-        </div>
+      <SessionSidebar
+        :sessions="sessions"
+        :active-id="sessionId"
+        :loading="sessionsLoading"
+        :error="sessionsError"
+        :busy="sending"
+        :open="sidebarOpen"
+        @new="newChat"
+        @select="openSession"
+        @rename="onRenameSession"
+        @remove="onDeleteSession"
+        @retry="loadSessions()"
+        @close="sidebarOpen = false"
+      />
 
-        <p v-if="favError" class="fav-side-error">{{ favError }}</p>
-
-        <div v-if="!favorites.length" class="fav-side-hint">
-          <p>还没有收藏。在商品卡上点「收藏」，这里就会出现。</p>
-        </div>
-
-        <div v-else class="fav-side-list">
-          <div v-for="item in favorites" :key="item.id" class="fav-side-item">
-            <div class="fav-side-thumb">
-              <img
-                v-if="item.image_url && !failedImages.has(item.product_id)"
-                :src="item.image_url"
-                :alt="item.title"
-                loading="lazy"
-                @error="failedImages.add(item.product_id)"
-              />
-              <span v-else>无图</span>
-            </div>
-
-            <div class="fav-side-info">
-              <div class="fav-side-title" :title="item.title">{{ item.title || '未命名商品' }}</div>
-              <div class="fav-side-line">
-                <span class="fav-side-price">{{ item.price || '价格未知' }}</span>
-                <span class="fav-side-time">{{ (item.time || '').slice(0, 10) }}</span>
-              </div>
-
-              <div class="fav-side-actions">
-                <button
-                  class="fav-side-link"
-                  type="button"
-                  :class="{ 'fav-side-link-open': pricePanel(item) && !pricePanel(item).collapsed }"
-                  @click="togglePricePanel(item)"
-                >
-                  价格记录
-                </button>
-                <a v-if="item.product_url" :href="item.product_url" target="_blank" rel="noopener">商品页</a>
-                <button
-                  class="fav-side-remove"
-                  type="button"
-                  :disabled="favBusy === item.product_id"
-                  @click="removeFavoriteItem(item)"
-                >
-                  移除
-                </button>
-              </div>
-
-              <!-- 价格记录：点上面的按钮才展开，数据也是那时才请求 -->
-              <div v-if="pricePanel(item) && !pricePanel(item).collapsed" class="price-panel">
-                <p v-if="pricePanel(item).loading" class="price-empty">正在读取…</p>
-                <p v-else-if="pricePanel(item).error" class="price-error">{{ pricePanel(item).error }}</p>
-
-                <ul v-else-if="pricePanel(item).points.length" class="price-list">
-                  <li v-for="(point, i) in pricePanel(item).points" :key="i">
-                    <span class="price-when">{{ pointTime(point) }}</span>
-                    <span class="price-amount">{{ point.price }}</span>
-                  </li>
-                </ul>
-                <p v-else class="price-empty">还没有价格记录，收藏时会自动记一笔。</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
+      <div class="chat-col">
 
       <div ref="scrollRef" class="scroll">
       <div class="thread">
-        <div v-if="!messages.length" class="empty">
-          <h2>想买点什么？</h2>
-          <p>说清商品和预算，我来帮你找。</p>
+        <p v-if="threadLoading" class="thread-loading">{{ SIDEBAR.loading }}</p>
+
+        <div v-else-if="!messages.length" class="empty">
+          <p v-if="threadNotice" class="notice notice-warn empty-notice">{{ threadNotice }}</p>
+          <h2>{{ EMPTY_STATE.title }}</h2>
+          <p>{{ EMPTY_STATE.subtitle }}</p>
+          <!-- 首页推荐：有消息后整块隐藏 -->
+          <HomeRecs
+            :user-id="userId"
+            :favorite-ids="favoriteIds"
+            :fav-busy="favBusy"
+            :disabled="sending"
+            @toggle-favorite="toggleFavorite"
+            @pick="pickRecommendation"
+            @send="onSend"
+          />
         </div>
 
         <div v-for="(message, index) in messages" :key="index" class="msg" :class="message.role">
@@ -600,10 +749,10 @@ function logout() {
             </section>
 
             <p v-if="message.error" class="notice notice-error">{{ message.error }}</p>
+            <p v-else-if="message.warn" class="notice notice-warn">{{ message.warn }}</p>
           </div>
         </div>
       </div>
-    </div>
     </div>
 
     <div class="composer-wrap">
@@ -638,5 +787,87 @@ function logout() {
         <p class="hint">回车发送 · Shift + 回车换行</p>
       </div>
     </div>
+      </div>
+
+      <!-- 收藏夹：从右侧滑出的抽屉，内容和原来的左侧栏一致 -->
+      <Transition name="drawer-fade">
+        <div v-if="showFavorites" class="fav-backdrop" @click="showFavorites = false"></div>
+      </Transition>
+      <Transition name="drawer">
+      <aside v-if="showFavorites" class="fav-side fav-drawer">
+        <div class="fav-side-head">
+          <h3>收藏夹{{ favorites.length ? `（${favorites.length}）` : '' }}</h3>
+          <button class="fav-side-close" type="button" :title="FAVORITES.drawerClose" :aria-label="FAVORITES.drawerClose" @click="showFavorites = false">×</button>
+        </div>
+
+        <p v-if="favError" class="fav-side-error">{{ favError }}</p>
+
+        <div v-if="!favorites.length" class="fav-side-hint">
+          <p>还没有收藏。在商品卡上点「收藏」，这里就会出现。</p>
+        </div>
+
+        <div v-else class="fav-side-list">
+          <div v-for="item in favorites" :key="item.id" class="fav-side-item">
+            <div class="fav-side-thumb">
+              <img
+                v-if="item.image_url && !failedImages.has(item.product_id)"
+                :src="item.image_url"
+                :alt="item.title"
+                loading="lazy"
+                @error="failedImages.add(item.product_id)"
+              />
+              <span v-else>无图</span>
+            </div>
+
+            <div class="fav-side-info">
+              <div class="fav-side-title" :title="item.title">{{ item.title || '未命名商品' }}</div>
+              <div class="fav-side-line">
+                <span class="fav-side-price">{{ item.price || '价格未知' }}</span>
+                <span class="fav-side-time">{{ (item.time || '').slice(0, 10) }}</span>
+              </div>
+
+              <div class="fav-side-actions">
+                <button
+                  class="fav-side-link"
+                  type="button"
+                  :class="{ 'fav-side-link-open': pricePanel(item) && !pricePanel(item).collapsed }"
+                  @click="togglePricePanel(item)"
+                >
+                  价格记录
+                </button>
+                <a v-if="item.product_url" :href="item.product_url" target="_blank" rel="noopener">商品页</a>
+                <button
+                  class="fav-side-remove"
+                  type="button"
+                  :disabled="favBusy === item.product_id"
+                  @click="removeFavoriteItem(item)"
+                >
+                  移除
+                </button>
+              </div>
+
+              <!-- 价格记录：点上面的按钮才展开，数据也是那时才请求 -->
+              <div v-if="pricePanel(item) && !pricePanel(item).collapsed" class="price-panel">
+                <p v-if="pricePanel(item).loading" class="price-empty">正在读取…</p>
+                <p v-else-if="pricePanel(item).error" class="price-error">{{ pricePanel(item).error }}</p>
+
+                <ul v-else-if="pricePanel(item).points.length" class="price-list">
+                  <li v-for="(point, i) in pricePanel(item).points" :key="i">
+                    <span class="price-when">{{ pointTime(point) }}</span>
+                    <span class="price-amount">{{ point.price }}</span>
+                  </li>
+                </ul>
+                <p v-else class="price-empty">还没有价格记录，收藏时会自动记一笔。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+      </Transition>
+    </div>
+
+    <Transition name="toast">
+      <div v-if="toast" class="toast" role="status">{{ toast }}</div>
+    </Transition>
   </div>
 </template>
