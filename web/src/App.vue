@@ -594,8 +594,9 @@ function logout() {
 
         <div v-else-if="!messages.length" class="empty">
           <p v-if="threadNotice" class="notice notice-warn empty-notice">{{ threadNotice }}</p>
+          <p class="empty-kicker">{{ EMPTY_STATE.kicker }}</p>
           <h2>{{ EMPTY_STATE.title }}</h2>
-          <p>{{ EMPTY_STATE.subtitle }}</p>
+          <p class="empty-sub">{{ EMPTY_STATE.subtitle }}</p>
           <!-- 首页推荐：有消息后整块隐藏 -->
           <HomeRecs
             :user-id="userId"
@@ -653,21 +654,22 @@ function logout() {
                     @error="markImageFailed(product)"
                   />
                   <span v-else>暂无图片</span>
+
+                  <!-- 收藏按钮浮到图片右上角：卡片改成竖版后，标题行没地方放它了 ——
+                       和空白页推荐卡（.rec-fav）同一个位置 -->
+                  <button
+                    class="fav-btn fav-btn-sm pick-fav"
+                    :class="{ 'fav-btn-on': isFavorited(product.product_id) }"
+                    type="button"
+                    :disabled="favBusy === product.product_id"
+                    @click="toggleFavorite(product)"
+                  >
+                    {{ isFavorited(product.product_id) ? '已收藏' : '收藏' }}
+                  </button>
                 </div>
 
                 <div class="pick-info">
-                  <div class="pick-head">
-                    <h3 class="pick-title" :title="product.title">{{ product.title }}</h3>
-                    <button
-                      class="fav-btn"
-                      :class="{ 'fav-btn-on': isFavorited(product.product_id) }"
-                      type="button"
-                      :disabled="favBusy === product.product_id"
-                      @click="toggleFavorite(product)"
-                    >
-                      {{ isFavorited(product.product_id) ? '已收藏' : '收藏' }}
-                    </button>
-                  </div>
+                  <h3 class="pick-title" :title="product.title">{{ product.title }}</h3>
 
                   <p class="pick-line">
                     <strong class="pick-price">{{ priceText(product) }}</strong>
