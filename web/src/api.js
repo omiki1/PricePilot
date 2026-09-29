@@ -23,13 +23,14 @@ export async function fetchHealth() {
  *
  * 用 EventSource（浏览器原生，自动处理分帧）。
  */
-export function openChat({ question, userId, sessionId, onText, onProducts, onDone, onError }) {
+export function openChat({ question, userId, sessionId, onText, onProducts, onDone, onError, onEnd }) {
   const params = new URLSearchParams({
     question,
     user_id: userId || 'default',
     session_id: sessionId || '',
   })
   const source = new EventSource(`${API_BASE}/chat?${params.toString()}`)
+  let finished = false
 
   source.onmessage = (event) => {
     let payload = null
@@ -40,8 +41,11 @@ export function openChat({ question, userId, sessionId, onText, onProducts, onDo
     }
 
     if (payload.done) {
+      finished = true
       source.close()
-      if (payload.data && onError) onError(payload.data)
+      // 结束帧的可选字段：code（会话校验没过）、saved=false（答完了但没存进历史）
+      if (onEnd) onEnd({ code: payload.code || '', saved: payload.saved !== false })
+      if (payload.data && onError) onError(payload.data, payload.code || '')
       if (onDone) onDone()
       return
     }
@@ -55,6 +59,10 @@ export function openChat({ question, userId, sessionId, onText, onProducts, onDo
   source.onerror = () => {
     // 连接关闭或出错：结束本轮；EventSource 的自动重连不需要（每轮都是新连接）
     source.close()
+    if (finished) return
+    finished = true
+    // 没收到结束帧就断了：告诉调用方「这一轮没说完」
+    if (onEnd) onEnd({ code: 'stream_broken', saved: false })
     if (onDone) onDone()
   }
 
@@ -163,6 +171,75 @@ export async function fetchFavorites({ userId, limit = 100 } = {}) {
     limit: String(limit),
   })
   const response = await fetch(`${API_BASE}/api/favorites?${params.toString()}`)
+  if (!response.ok) throw await readError(response)
+  return response.json()
+}
+
+// ---------------------------------------------------------------- 会话管理
+// 后端每个带会话 ID 的接口都会校验「会话属于这个 user_id」，不属于返回 403（error.status === 403）。
+// 注意这只是临时措施：user_id 仍由前端传，等有 token 鉴权后再换。
+
+/** 新建会话，返回 { session_id, title: null, ... }。 */
+export async function createSession({ userId }) {
+  const response = await fetch(`${API_BASE}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId }),
+  })
+  if (!response.ok) throw await readError(response)
+  return response.json()
+}
+
+/** 会话列表（updated_at 倒序），返回 { user_id, sessions: [...] }。 */
+export async function fetchSessions({ userId }) {
+  const params = new URLSearchParams({ user_id: userId })
+  const response = await fetch(`${API_BASE}/api/sessions?${params.toString()}`)
+  if (!response.ok) throw await readError(response)
+  return response.json()
+}
+
+/** 某个会话的聊天记录，返回 { session_id, messages: [{role, content, products, created_at}] }。 */
+export async function fetchSessionMessages({ userId, sessionId }) {
+  const params = new URLSearchParams({ user_id: userId })
+  const response = await fetch(
+    `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/messages?${params.toString()}`,
+  )
+  if (!response.ok) throw await readError(response)
+  return response.json()
+}
+
+/** 重命名。 */
+export async function renameSession({ userId, sessionId, title }) {
+  const response = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, title }),
+  })
+  if (!response.ok) throw await readError(response)
+  return response.json()
+}
+
+/** 删除（后端软删除，收藏夹不受影响）。 */
+export async function deleteSession({ userId, sessionId }) {
+  const params = new URLSearchParams({ user_id: userId })
+  const response = await fetch(
+    `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}?${params.toString()}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) throw await readError(response)
+  return response.json()
+}
+
+// ---------------------------------------------------------------- 首页推荐
+
+/**
+ * 新对话页的推荐卡。refresh=true 是「换一批」（后端跳过缓存）。
+ * 返回 { mode: 'profile'|'favorites'|'samples', products: [...{match}], error, cached, exhausted }。
+ * 这个接口出错也返回 200（mode=samples, error=true），前端只需要处理网络层失败。
+ */
+export async function fetchRecommendations({ userId, refresh = false }) {
+  const params = new URLSearchParams({ user_id: userId || 'default', refresh: refresh ? '1' : '0' })
+  const response = await fetch(`${API_BASE}/api/recommendations?${params.toString()}`)
   if (!response.ok) throw await readError(response)
   return response.json()
 }

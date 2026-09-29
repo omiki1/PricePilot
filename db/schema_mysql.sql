@@ -230,6 +230,39 @@ CREATE TABLE IF NOT EXISTS review_samples (
   KEY idx_review_product (product_id, published_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='评论样本';
 
+-- ------------------------------------------------------------
+-- 9. chat_session 会话表（左侧会话栏；omiki 2026-09-29）
+-- user_id 与 favorite_product 一致用 VARCHAR(64)：目前前端传的是登录返回的 user_id 字符串。
+-- 软删除：is_deleted=1 后列表不再返回，消息行保留不物理删除；收藏夹不受影响。
+-- title 为 NULL 表示还没发第一句（前端显示「新对话」），第一轮问答后取问题前 20 字。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS chat_session (
+  session_id  VARCHAR(64)     NOT NULL           COMMENT '会话 ID（UUID），同时是 LangGraph thread_id 和 Redis 窗口记忆的 key 后缀',
+  user_id     VARCHAR(64)     NOT NULL           COMMENT '会话归属；每个会话接口都按它校验，不一致返回 403',
+  title       VARCHAR(128)    NULL               COMMENT '会话标题；NULL = 还没发第一句',
+  created_at  DATETIME(6)     NOT NULL           COMMENT '应用写入 UTC',
+  updated_at  DATETIME(6)     NOT NULL           COMMENT '应用写入 UTC；每轮问答后刷新，列表按它倒序',
+  is_deleted  TINYINT(1)      NOT NULL DEFAULT 0  COMMENT '软删除标记',
+  PRIMARY KEY (session_id),
+  KEY idx_chat_session_user (user_id, is_deleted, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天会话';
+
+-- ------------------------------------------------------------
+-- 10. chat_message 会话消息表（展示用的完整历史）
+-- 模型上下文不从这里读：仍走 Redis 窗口/摘要记忆；这里只负责「打开历史会话能看到原样的聊天记录和商品卡」。
+-- products 存本轮最后一次 products 帧（JSON 数组），只有 assistant 行有值。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS chat_message (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  session_id  VARCHAR(64)     NOT NULL,
+  role        VARCHAR(16)     NOT NULL           COMMENT 'user / assistant',
+  content     TEXT            NOT NULL           COMMENT '用户问题或助手完整回答（Markdown 原文）',
+  products    JSON            NULL               COMMENT '本轮商品卡 [Product...]，含 price_text',
+  created_at  DATETIME(6)     NOT NULL           COMMENT '应用写入 UTC',
+  PRIMARY KEY (id),
+  KEY idx_chat_message_session (session_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息';
+
 -- ============================================================
 -- 演示数据：单用户身份（Day1 演示用）
 -- ============================================================
@@ -238,6 +271,6 @@ VALUES (1, 'demo-user', NULL, 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
 ON DUPLICATE KEY UPDATE display_name = VALUES(display_name);
 
 -- ============================================================
--- 自检：应看到 8 张表
+-- 自检：应看到 10 张表（原 8 张 + chat_session / chat_message）
 -- ============================================================
 SHOW TABLES;

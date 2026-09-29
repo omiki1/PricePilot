@@ -100,3 +100,14 @@ service.events 返回可 JSON 序列化的 dict，Decimal 用字符串、时间�
 同用户同请求 ID 原子防重；同 session 单活跃 run；run 完成先保存快照再发终态；事件有限缓冲并按游标回放；断开订阅不创建新任务；取消标识阻止晚到结果；重启失效有明确错误。单进程先实现内存运行管理，业务收藏仍落主库。
 
 Cookie 认证时 POST/PATCH/DELETE 需要相应 CSRF 防护；API 密钥不放到 SSE URL。真实来源抓取错误不要把凭证和原始异常堆栈发给浏览器。
+
+## 会话持久化与首页推荐（2026-09-29 已落地）
+
+> omiki。完整说明（接口、DDL、测试、面试要点）见交付文档《功能说明_会话与推荐》，这里只记和 `/chat` 协议相关的约定。
+
+- **帧契约不变**：仍是 `products` / `text` / `{done:true}`。结束帧新增两个可选字段，老前端忽略即可：
+  - `saved: false`：这一轮已回答但没写进 chat_message（库不可用），前端提示「这轮回答没存进历史，刷新后会看不到。」
+  - `code: "session_forbidden" | "session_deleted"`：session_id 属于别的 user_id / 已被删除。**这种情况不跑图**（thread_id = session_id，放行就会读到别人的 LangGraph 检查点和 Redis 窗口记忆），`data` 里是提示文案。
+- **落库时机**：一轮结束后把用户问题、助手全文、本轮**最后一次** products 帧写进 chat_message；会话不存在就懒创建（INSERT IGNORE，防并发抢同一个新 ID）；标题为空时取首问前 20 字；刷新 updated_at。落库失败只打日志，不影响 SSE。
+- **归属校验是临时措施**：登录不发 token，user_id 由前端传，照样可以伪造。所有新接口（会话、推荐、聊天落库）的当前用户都经 `app/web/deps.py` 的 `get_current_user_id` 依赖取得，接 token 时只改这一个函数。
+- **重启后的上下文**：InMemorySaver 是进程内的，服务重启后旧会话的 LangGraph 检查点就没了。左侧栏看到的历史来自 MySQL（chat_message），模型真正能「记得」的上下文来自 Redis 窗口记忆（window_memory:{session_id}，24h）和摘要记忆；两者都过期后，旧会话能看不能「接着聊」原来的细节。
