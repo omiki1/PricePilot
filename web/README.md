@@ -1,10 +1,7 @@
 # web：PricePilot 前端（Vue3 + Vite，前后端分离）
 
-当前只接入**已完成的意图识别业务**（后端 `START → intent → END`）。
-
-> 商品检索（多来源 tool、价格过滤、结果缓存）的代码已按你的要求撤掉，
-> 完整源码与实测字段档案保留在
-> `PricePilot-购物决策Agent开发手册/附录/Apify检索接入-代码存档与实测.md`。
+聊天界面走 SSE 流式接收，后端按序推三种帧：`text`（增量文本）、`products`（商品卡数据）、
+`done`（结束）。详情见根目录 `README.md`。
 
 ## 启动
 
