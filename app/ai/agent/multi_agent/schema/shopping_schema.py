@@ -11,8 +11,10 @@ ActionLiteral = Literal["search"]
 
 class ShopifySearchInput(BaseModel):
     query: str
-    min_price: int | None = None
-    max_price: int | None = None
+    # 预算区间，单位人民币元；0 = 这一端不设限。
+    # 只给本地过滤用，**不发**检索接口（见 adapter.map_state_to_shopify）。
+    min_price: float = 0
+    max_price: float = 0
     # ── [B 修改 2026-09-24] 定性价格偏好（'' / cheap / premium）────────────
     # max_price 只能表达"有多少钱"，表达不了"想买便宜的"。
     # 没有数字预算时它是唯一的省钱信号，交给 filter_products_by_budget 做相对收窄。

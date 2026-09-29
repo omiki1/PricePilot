@@ -1,10 +1,12 @@
 from __future__ import annotations
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
 from dotenv import load_dotenv
 load_dotenv()
+from app.web.asr_router import asr_router
 from app.web.chat_router import chat_router
 from app.web.favorite_router import favorite_router
 from app.web.login_router import email_router, register_router, user_router
@@ -17,6 +19,18 @@ async def content_manager(app:FastAPI):
     print("模型配置：")
     app.state.shopping_agent = ShoppingGraph()
     print("AI购物智能体创建成功")
+
+    # 预热语音识别模型：vosk 中文模型加载要 ~18 秒，
+    # 放在这里是为了让第一个点麦克风的人不用干等。
+    # 丢线程跑（它阻塞），失败只警告不阻断启动 —— 语音是增强项。
+    try:
+        from app.ai.tool.asr import preload
+
+        ok = await asyncio.to_thread(preload)
+        print("语音识别就绪" if ok else "语音识别不可用（不影响聊天）")
+    except Exception as exc:                      # noqa: BLE001
+        print(f"语音识别预热异常：{exc}")
+
     yield
     #消耗对象
     app.state.shopping_agent = None
@@ -35,6 +49,9 @@ application.include_router(favorite_router, prefix='/api')
 # 会话管理（/api/sessions...）与首页推荐（/api/recommendations），同样在注册时补 /api 前缀
 application.include_router(session_router, prefix='/api')
 application.include_router(recommend_router, prefix='/api')
+
+# 语音识别：POST /api/asr（上传 WAV 转文字）、GET /api/asr/status（模型是否就绪）
+application.include_router(asr_router, prefix='/api')
 
 # 账号相关：router 里定义的是 /login、/register、/sendEmail、/verifyCode，
 # login_router.py 的文档字符串里写的访问路径本来就是 /user/xxx。

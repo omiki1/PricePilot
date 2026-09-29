@@ -84,7 +84,8 @@ def _previous_turn(state: ShoppingState) -> str:
     prev_question = str(state.get('question') or '').strip()
     carried = []
     for key, label, note in (('category', '品类', '话题级，换话题时丢弃'),
-                             ('price', '预算', '会话级，继续沿用'),
+                             ('price', '预算上限', '会话级，继续沿用'),
+                             ('price_min', '预算下限', '会话级，继续沿用'),
                              ('price_pref', '价格偏好', '会话级，继续沿用')):
         value = state.get(key)
         if value:
@@ -156,7 +157,8 @@ def intent_node(state: ShoppingState):
     # flush=True：这条日志是排查"识别错品类/漏掉价格偏好"的第一现场，
     # stdout 重定向到文件时会被块缓冲住、要等下一波输出才落盘，加了就即时可见。
     print(f"[intent] router={router} category={data['category']!r} "
-          f"price={data['price']} price_pref={price_pref!r} question={data['question']!r}",
+          f"price={data['price']} price_min={data.get('price_min')} "
+          f"price_pref={price_pref!r} question={data['question']!r}",
           flush=True)
 
     out = {
@@ -168,4 +170,7 @@ def intent_node(state: ShoppingState):
     if router in ('search', 'clarify'):
         out['category'] = data['category']
         out['price'] = data['price']
+        # 下限只在用户这轮明确说了区间时才有值；没提就是 0，
+        # 由 adapter 判断成"只卡上限"，不会被上一轮的下限黏住。
+        out['price_min'] = data.get('price_min') or 0
     return out

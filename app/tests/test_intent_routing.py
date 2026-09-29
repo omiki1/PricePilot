@@ -116,11 +116,12 @@ def test_cheap_keeps_unknown_currency_products():
 
 def test_cheap_after_budget_filter():
     """预算与「便宜」可以同时生效：先卡上限，再在剩下的里取低价一档。"""
-    products = [make_product(str(i), p) for i, p in enumerate([10, 20, 30, 40, 50, 60, 70, 80])]
-    # 上限 52 美元 → 只剩 10..50
+    # 价格用人民币报，免得这条断言跟着汇率漂（预算字段现在就是人民币元）
+    products = [make_product(str(i), p, "CNY") for i, p in enumerate([10, 20, 30, 40, 50, 60, 70, 80])]
+    # 上限 ¥52 → 只剩 10..50
     kept, _ = filter_products_by_budget(
         products,
-        ShopifySearchInput(query="x", max_price=5200, price_pref="cheap"))
+        ShopifySearchInput(query="x", max_price=52, price_pref="cheap"))
 
     assert max(prices_of(kept)) <= 30.0, prices_of(kept)
 

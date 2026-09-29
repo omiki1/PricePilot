@@ -164,6 +164,36 @@ export async function fetchPriceHistory({ productId, limit = 60 }) {
   return response.json()
 }
 
+// ---------------------------------------------------------------- 语音识别
+
+/**
+ * 上传一段 WAV 录音，拿回识别出的文字。
+ * 返回 { text, ready, hint? }；text 为空表示没听清（hint 里有提示语）。
+ */
+export async function transcribe({ blob, userId }) {
+  const form = new FormData()
+  // 文件名随便给，后端按内容解析；给个 .wav 便于日志里辨认
+  form.append('audio', blob, 'speech.wav')
+  const params = new URLSearchParams({ user_id: userId || 'default' })
+  const response = await fetch(`${API_BASE}/api/asr?${params.toString()}`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!response.ok) throw await readError(response)
+  return response.json()
+}
+
+/** 语音功能是否可用（服务端模型有没有加载成功）。 */
+export async function fetchAsrStatus() {
+  try {
+    const response = await fetch(`${API_BASE}/api/asr/status`)
+    if (!response.ok) return { ready: false }
+    return await response.json()
+  } catch (exception) {
+    return { ready: false }
+  }
+}
+
 /** 拉收藏夹。返回 { user_id, total, favorites: [...] }。 */
 export async function fetchFavorites({ userId, limit = 100 } = {}) {
   const params = new URLSearchParams({

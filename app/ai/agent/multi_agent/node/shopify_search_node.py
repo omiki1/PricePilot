@@ -52,8 +52,8 @@ def shopify_search_node(
     products = normalize_shopify_products(
         raw_products
     )
-    # 本地按预算复核：接口的 price 过滤只对 USD 有效，且 min+max 同发时
-    # max 会漏放，所以这里再筛一遍，保证"预算区间"是真的生效的。
+    # 预算在这一步才生效：检索阶段不传价格（跨币种的价格过滤不可靠），
+    # 拿到候选后按人民币筛，保证"预算区间"是真的生效的。
     products, report = filter_products_by_budget(
         products,
         shopify_input,
@@ -63,6 +63,9 @@ def shopify_search_node(
     # 打出 kept / dropped / 价位上限，验证与排查时一眼能看出这道闸有没有关上。
     print(f'[shopify_search] query={shopify_input.query!r} '
           f'price_pref={shopify_input.price_pref!r} 本地复核={report}', flush=True)
+    # search_report 一并写进 state：output 要靠它如实说明
+    # 「这个价位没搜到，以下是接近的」，而不是让模型自己猜着编。
     return {
-        "products": products
+        "products": products,
+        "search_report": report,
     }

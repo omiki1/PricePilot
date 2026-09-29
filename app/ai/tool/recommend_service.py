@@ -211,8 +211,9 @@ def _redis():
     )
 
 
-def _search_one(query: str, max_usd_cents: int | None) -> list:
-    arguments = build_shopify_arguments(ShopifySearchInput(query=query, max_price=max_usd_cents))
+def _search_one(query: str) -> list:
+    # 预算不进检索参数：跨币种的价格过滤不可靠，统一在 _pick 里按人民币卡（budget）。
+    arguments = build_shopify_arguments(ShopifySearchInput(query=query))
     products = []
     for item in search_shopify(arguments) or []:
         try:
@@ -222,12 +223,12 @@ def _search_one(query: str, max_usd_cents: int | None) -> list:
     return products
 
 
-def _search_many(queries: list[str], max_usd_cents: int | None) -> list[list]:
+def _search_many(queries: list[str]) -> list[list]:
     """并发检索，整体限时。返回和 queries 等长的结果列表（失败/超时的是 []）；全部失败抛 RecommendSearchError。"""
     if not queries:
         return []
     pool = ThreadPoolExecutor(max_workers=len(queries))
-    futures = [pool.submit(_search_one, query, max_usd_cents) for query in queries]
+    futures = [pool.submit(_search_one, query) for query in queries]
     try:
         wait(futures, timeout=SEARCH_BUDGET_SECONDS)
     finally:
@@ -248,16 +249,6 @@ def _search_many(queries: list[str], max_usd_cents: int | None) -> list[list]:
     if len(failures) == len(queries):
         raise RecommendSearchError('；'.join(failures))
     return results
-
-
-def _usd_cents(budget_cny: Decimal | None) -> int | None:
-    """人民币上限 → Shopify 过滤用的美元分（和 adapter 一样只发上限，本地再按 currency.py 复核）。"""
-    if not budget_cny:
-        return None
-    rate, _ = currency.cny_per('USD')
-    if not rate:
-        return None
-    return int((budget_cny / rate * 100).to_integral_value())
 
 
 def _haystack(product) -> str:
@@ -352,7 +343,7 @@ def _profile_buckets(categories, brands, round_no, budget_cny):
     else:
         for brand in brands[:MAX_QUERIES]:
             plans.append(({}, to_query_term(brand, ZH_EN_BRAND)))
-    results = _search_many([query for _, query in plans], _usd_cents(budget_cny))
+    results = _search_many([query for _, query in plans])
     return [(base, products) for (base, _), products in zip(plans, results)], [q for _, q in plans]
 
 
@@ -381,7 +372,7 @@ def _favorite_buckets(favorites, round_no):
             plans.append(({'favoriteName': favorite_short_name(fav.get('title') or '')}, keywords))
         if len(plans) >= MAX_QUERIES:
             break
-    results = _search_many([query for _, query in plans], None)
+    results = _search_many([query for _, query in plans])
     return [(base, products) for (base, _), products in zip(plans, results)], [q for _, q in plans]
 
 
