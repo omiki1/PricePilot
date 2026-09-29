@@ -16,9 +16,7 @@ def _connect():
 
 
 def _point(row) -> dict:
-    """行 -> 点：金额转十进制字符串，时间补 UTC 标记。
-    Decimal 不能直接 JSON 序列化，datetime 也要转成前端认识的 ISO 串。
-    """
+    """行 -> 点：金额转十进制字符串，时间补 UTC 标记。"""
     item = dict(row)
     item["price"] = format(item["price"], "f")
     value = item.get("recorded_at")
@@ -28,11 +26,7 @@ def _point(row) -> dict:
 
 
 def record_price(product_id: str, price) -> dict:
-    """记一笔价格；和上一条相同就不写，返回 {recorded, reason}。
-
-    同价重复写没有信息量，只会让表白白涨行。
-    价格为空的商品不写占位行 —— 否则会出现假的 0。
-    """
+    """记一笔价格；和上一条相同就不写，返回 {recorded, reason}。"""
     product = str(product_id or "").strip()[:191]
     if not product:
         raise PriceHistoryError("缺少 product_id，无法记录价格")
@@ -82,19 +76,3 @@ def price_history(product_id: str, limit: int = 60) -> list:
         conn.close()
 
     return [_point(row) for row in reversed(rows)]
-
-
-def clear_history(product_id: str) -> int:
-    """删掉某个商品的全部价格记录，只给调试用。"""
-    product = str(product_id or "").strip()[:191]
-    if not product:
-        return 0
-    SQL = "DELETE FROM product_price_history WHERE product_id = %s"
-    conn = _connect()
-    try:
-        with conn.cursor() as cursor:
-            deleted = cursor.execute(SQL, (product,))
-        conn.commit()
-    finally:
-        conn.close()
-    return int(deleted or 0)

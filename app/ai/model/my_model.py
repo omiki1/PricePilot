@@ -7,13 +7,7 @@ load_dotenv()
 
 
 def _read(*names):
-    """按顺序取第一个非空的环境变量。
-
-    历史原因，这套变量在 .env 里存在多种叫法：
-        LINE_MODEL_NAME  / MAIN_MODEL_NAME   / MODEL_LINE_NAME
-        DASHSCOPE_API_KEY / MAIN_MODEL_API_KEY / COMMANDCODE_API_KEY / GLM_API_KEY
-    都读一遍，改 .env 时不用再动代码。
-    """
+    """按顺序取第一个非空的环境变量。"""
     for name in names:
         value = os.getenv(name)
         if value:
@@ -22,10 +16,7 @@ def _read(*names):
 
 
 def _credentials():
-    """解析出 (model, api_key, base_url)，缺凭证时给出可操作的报错。
-
-    刻意不写死任何服务商：换服务商只改 .env，代码不动。
-    """
+    """解析出 (model, api_key, base_url)，缺凭证时给出可操作的报错。"""
     model = _read("LINE_MODEL_NAME", "MAIN_MODEL_NAME", "MODEL_LINE_NAME", "MODEL_NAME")
     api_key = _read(
         "LINE_MODEL_API_KEY",
@@ -57,26 +48,16 @@ def _build(*, streaming, thinking=False):
     model, api_key, base_url = _credentials()
     kwargs = {"model": model, "api_key": api_key, "base_url": base_url, "streaming": streaming}
     if not thinking:
-        # 关闭思考模式：thinking 模式下部分服务商不允许 tool_choice=required，
-        # 会让 with_structured_output(function_calling) 拿不到 tool_call。
+        # 关闭思考模式：thinking 模式下部分服务商不允许 tool_choice=required。
         kwargs["extra_body"] = {"enable_thinking": False}
     return ChatOpenAI(**kwargs)
 
 
 class MyModel:
-    """基于单例模式的模型封装。
-
-    换服务商只改 .env，不用动代码。变量按下面的顺序回退，取第一个非空的：
-        模型名   LINE_MODEL_NAME   -> MAIN_MODEL_NAME   -> MODEL_LINE_NAME -> MODEL_NAME
-        API Key  LINE_MODEL_API_KEY-> MAIN_MODEL_API_KEY-> DASHSCOPE_API_KEY-> COMMANDCODE_API_KEY
-        base_url LINE_MODEL_BASE_URL->MAIN_MODEL_BASE_URL->OPENAI_API_BASE  -> BASE_URL
-
-    自查：python -c "from app.ai.model.my_model import describe; print(describe())"
-    """
+    """基于单例模式的模型封装。"""
 
     _model = None
     _router_model = None
-    _think_model = None
 
     @staticmethod
     def get_model():
@@ -87,32 +68,16 @@ class MyModel:
 
     @staticmethod
     def get_router_model():
-        """结构化输出（意图识别、画像提取）用：**非流式**。
-
-        流式下 with_structured_output(function_calling) 偶发拿不到 tool_call
-        而返回 None 或超时，路由场景必须非流式。
-        """
+        """结构化输出（意图识别、画像提取）用：非流式。"""
         if MyModel._router_model is None:
             MyModel._router_model = _build(streaming=False)
         return MyModel._router_model
-
-    @staticmethod
-    def get_think_model():
-        """需要思考链的场景用：流式且**保留** thinking。
-
-        注意单例是独立的（_think_model），以前和 get_router_model 共用一个
-        槽位，谁先调用谁把对方覆盖掉。
-        """
-        if MyModel._think_model is None:
-            MyModel._think_model = _build(streaming=True, thinking=True)
-        return MyModel._think_model
 
     @staticmethod
     def reset():
         """丢掉已缓存实例，主要给测试和换配置后用。"""
         MyModel._model = None
         MyModel._router_model = None
-        MyModel._think_model = None
 
 
 def describe() -> str:
