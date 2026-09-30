@@ -16,8 +16,7 @@ def _connect():
         raise FavoriteError("连接 MySQL 失败：" + str(exc)) from exc
 
 def _row(row) -> dict:
-    """数据库行 -> 前端用的 dict。
-    """
+    """数据库行 -> 前端用的 dict。"""
     item = dict(row)
     if item.get("price") is not None:
         item["price"] = format(item["price"], "f")
@@ -27,8 +26,7 @@ def _row(row) -> dict:
     return item
 
 def add_favorite(user_id: str, product) -> dict:
-    """收藏一个商品，返回落库后的那一行。
-    """
+    """收藏一个商品，返回落库后的那一行。"""
     raw = product.model_dump() if hasattr(product, "model_dump") else dict(product)
     product_id = str(raw.get("product_id") or "").strip()
     if not product_id:
@@ -79,8 +77,7 @@ def add_favorite(user_id: str, product) -> dict:
 
 
 def list_favorites(user_id: str, limit: int = 100) -> list:
-    """列某个用户自己的收藏
-    """
+    """列某个用户自己的收藏"""
     owner = str(user_id or "default").strip() or "default"
     limit = max(1, min(int(limit), 500))
     SQL = ("SELECT " + COLUMNS + " FROM favorite_product "
@@ -121,22 +118,6 @@ def remove_favorite(user_id: str, product_id: str) -> int:
     try:
         with conn.cursor() as cursor:
             deleted = cursor.execute(SQL, (owner, str(product_id or "")[:191]))
-        conn.commit()
-    finally:
-        conn.close()
-    return int(deleted or 0)
-
-
-def clear_favorites(user_id: str) -> int:
-    """清空某个用户的收藏，只给调试用（前端不暴露）。"""
-    owner = str(user_id or "default").strip() or "default"
-
-    SQL = "DELETE FROM favorite_product WHERE user_id = %s"
-
-    conn = _connect()
-    try:
-        with conn.cursor() as cursor:
-            deleted = cursor.execute(SQL, (owner,))
         conn.commit()
     finally:
         conn.close()

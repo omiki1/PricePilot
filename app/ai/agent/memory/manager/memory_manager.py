@@ -5,10 +5,7 @@ from app.ai.agent.memory.retrieval.profile_agent import ProfileAgent
 
 
 class MemoryManager:
-    """一轮对话结束后，把窗口里的内容提炼进 L2 / L3 / L4。
-
-    每个智能体各自 try/except：某一层挂了不该拖累另外两层。
-    """
+    """一轮对话结束后，把窗口里的内容提炼进 L2 / L3 / L4。"""
 
     def __init__(self, session_manager: SessionManager):
         self.summary_agent = SummaryAgent(session_manager.summary_memory)
@@ -20,12 +17,11 @@ class MemoryManager:
         window = await self.window_memory.query() or []
 
         # 拼成给模型看的对话文本：user / ai 都要带上，每条一行。
-        # 只收用户提问的话，「助手推荐了什么、用户满不满意」就丢了。
         lines = []
         for item in window:
             who = "用户" if item.get("role") == "user" else "助手"
             lines.append(f"{who}：{item.get('content', '')}")
-        dialogue = chr(10).join(lines)
+        dialogue = '\n'.join(lines)
         if not dialogue:
             dialogue = question or ""
 

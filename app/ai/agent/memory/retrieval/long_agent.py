@@ -6,14 +6,7 @@ from app.ai.agent.memory.save.long_memory import LongMemory
 
 
 class LongAgent:
-    """长期记忆：从对话里抽出「这个用户的稳定偏好」，逐条存进向量库。
-
-    和摘要记忆的分工：
-      摘要记忆 = 这一次会话聊了什么（换会话就换一份）
-      长期记忆 = 这个用户一贯的偏好（跨会话累积，靠语义检索召回）
-
-    所以这里只记「下次还用得上」的东西，一次性的需求（"今天想买个键盘"）不进长期记忆。
-    """
+    """长期记忆：从对话里抽出「这个用户的稳定偏好」，逐条存进向量库。"""
 
     def __init__(self, long_memory: LongMemory):
         self.model = MyModel.get_model()
@@ -76,17 +69,12 @@ class LongAgent:
         return self.agent
 
     async def update(self, user_id, question):
-        """question 是拼好的对话文本；模型返回的条目整体作为一条长期记忆入库。
-
-        存整段而不是逐条入库：向量检索按语义匹配，一段里包含多条偏好也能被召回，
-        而且少一次往返。
-        """
+        """question 是拼好的对话文本；模型返回的条目整体作为一条长期记忆入库。"""
         print("开始更新长期记忆")
         rs = await self.agent.ainvoke({"messages": [HumanMessage(content=question)]})
         content = (rs["messages"][-1].content or "").strip()
         print("更新长期记忆结束")
-        # 模型被明确告知「没有信息就返回空」——空串不入库，否则向量库里全是噪声，
-        # 检索时会把无关条目召回上来。
+        # 模型被明确告知「没有信息就返回空」——空串不入库，否则向量库里全是噪声。
         if not content:
             print("本轮没有值得长期记住的信息，跳过入库")
             return

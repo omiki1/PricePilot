@@ -1,19 +1,4 @@
-"""L2 摘要记忆（PostgreSQL）。
-
-为什么用**同步** psycopg 而不是 AsyncConnectionPool：
-    psycopg 的异步模式需要 SelectorEventLoop，而 uvicorn 在 Windows 上
-    硬编码返回 ProactorEventLoop（uvicorn/loops/asyncio.py）：
-        if sys.platform == "win32" and not use_subprocess:
-            return asyncio.ProactorEventLoop
-    set_event_loop_policy() 也管不着它 —— 那行是直接返回类，不看 policy。
-    于是异步连接必然报：
-        "Psycopg cannot use the 'ProactorEventLoop' to run in async mode"
-
-    改成同步驱动 + asyncio.to_thread：连接在哪个线程跑都行，
-    和事件循环类型无关，uvicorn / 脚本 / 测试里都能用。
-
-表结构见 db/schema_memory_pg.sql（session_id 是 TEXT，不是 integer）。
-"""
+"""PostgreSQL 摘要存储；同步驱动配合线程，兼容 Windows 事件循环。"""
 
 import asyncio
 import os

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import {
   addFavorite,
   createSession,
@@ -8,13 +8,10 @@ import {
   fetchPriceHistory,
   fetchSessionMessages,
   fetchSessions,
-  fetchAsrStatus,
   openChat,
   removeFavorite,
   renameSession,
-  transcribe,
 } from './api.js'
-import { createRecorder, isRecordingSupported } from './recorder.js'
 import { renderMarkdown } from './markdown.js'
 import LoginView from './LoginView.vue'
 import HomeRecs from './HomeRecs.vue'
@@ -54,16 +51,6 @@ const favBusy = ref('') // 正在操作的商品 ID：期间禁用按钮，防�
 // 价格记录：点「价格记录」才去查，不在收藏列表里预加载。
 // 一次只展开一个商品，key 是 product_id，值是 { collapsed, loading, error, points }。
 const pricePanels = reactive({})
-
-// ---- 语音输入 ----
-// recording：正在录音（按钮变红、显示计时）
-// asrReady：服务端 vosk 模型是否就绪（没就绪就把按钮置灰并说明原因）
-const recording = ref(false)
-const recordSeconds = ref(0)
-const asrReady = ref(true)
-const voiceError = ref('')
-let recorder = null
-let recordTimer = null
 
 const messages = ref([])          // {role, text, products, streaming, error, showAll}
 const sending = ref(false)
@@ -492,14 +479,8 @@ onMounted(async () => {
     loadFavorites()
     await restoreSession()
   }
-  // 服务端 vosk 模型没加载成功的话，把麦克风按钮置灰并说明原因
-  const asr = await fetchAsrStatus()
-  asrReady.value = asr.ready !== false
   textareaRef.value?.focus()
 })
-
-// 离开页面务必关掉麦克风，否则标签页上会一直亮着录音图标
-onBeforeUnmount(releaseRecorder)
 
 /** 进页面 / 登录后：拉会话列表，上次停留的会话还在就打开它，否则停在新对话页。 */
 async function restoreSession() {
@@ -510,84 +491,6 @@ async function restoreSession() {
   } else {
     sessionId.value = ''
     rememberSession('')
-  }
-}
-
-// ---- 语音输入 ----
-
-/** 点麦克风：开始 / 结束录音。识别出来的文字**追加**到输入框，不覆盖用户已经打的字。 */
-async function toggleVoice() {
-  if (recording.value) {
-    await stopVoice()
-    return
-  }
-
-  voiceError.value = ''
-  if (!isRecordingSupported()) {
-    voiceError.value = '当前浏览器不支持录音（需要 https 或 localhost，且用 Chrome / Edge）'
-    return
-  }
-
-  try {
-    recorder = createRecorder()
-    await recorder.start()          // 浏览器要求这一步发生在用户点击里
-    recording.value = true
-    recordSeconds.value = 0
-    recordTimer = setInterval(() => { recordSeconds.value += 1 }, 1000)
-    // 超过 30 秒自动停：再长后端也识别不准，而且上传会变大
-    setTimeout(() => {
-      if (recording.value && recordSeconds.value >= 30) stopVoice()
-    }, 31000)
-  } catch (exception) {
-    recorder = null
-    voiceError.value = exception.name === 'NotAllowedError'
-      ? '麦克风权限被拒绝了，请在浏览器地址栏放行后重试'
-      : `无法开始录音：${exception.message}`
-  }
-}
-
-async function stopVoice() {
-  if (!recording.value || !recorder) return
-
-  clearInterval(recordTimer)
-  recordTimer = null
-  recording.value = false
-
-  let blob = null
-  try {
-    blob = await recorder.stop()
-  } catch (exception) {
-    voiceError.value = exception.message || '录音失败'
-    recorder = null
-    return
-  }
-  recorder = null
-
-  try {
-    const result = await transcribe({ blob, userId: userId.value })
-    if (result.text) {
-      // 追加而不是覆盖：用户可能已经打了一半
-      input.value = input.value ? `${input.value} ${result.text}` : result.text
-      nextTick(() => {
-        autoGrow()
-        textareaRef.value?.focus()
-      })
-    } else {
-      voiceError.value = result.hint || '没听清，再说一次'
-    }
-  } catch (exception) {
-    voiceError.value = exception.message || '语音识别失败'
-  }
-}
-
-// 组件卸载 / 离开页面时务必关掉麦克风，否则标签页上一直亮着录音图标
-function releaseRecorder() {
-  clearInterval(recordTimer)
-  recordTimer = null
-  recording.value = false
-  if (recorder) {
-    recorder.cancel()
-    recorder = null
   }
 }
 
@@ -691,8 +594,9 @@ function logout() {
 
         <div v-else-if="!messages.length" class="empty">
           <p v-if="threadNotice" class="notice notice-warn empty-notice">{{ threadNotice }}</p>
+          <p class="empty-kicker">{{ EMPTY_STATE.kicker }}</p>
           <h2>{{ EMPTY_STATE.title }}</h2>
-          <p>{{ EMPTY_STATE.subtitle }}</p>
+          <p class="empty-sub">{{ EMPTY_STATE.subtitle }}</p>
           <!-- 首页推荐：有消息后整块隐藏 -->
           <HomeRecs
             :user-id="userId"
@@ -750,21 +654,22 @@ function logout() {
                     @error="markImageFailed(product)"
                   />
                   <span v-else>暂无图片</span>
+
+                  <!-- 收藏按钮浮到图片右上角：卡片改成竖版后，标题行没地方放它了 ——
+                       和空白页推荐卡（.rec-fav）同一个位置 -->
+                  <button
+                    class="fav-btn fav-btn-sm pick-fav"
+                    :class="{ 'fav-btn-on': isFavorited(product.product_id) }"
+                    type="button"
+                    :disabled="favBusy === product.product_id"
+                    @click="toggleFavorite(product)"
+                  >
+                    {{ isFavorited(product.product_id) ? '已收藏' : '收藏' }}
+                  </button>
                 </div>
 
                 <div class="pick-info">
-                  <div class="pick-head">
-                    <h3 class="pick-title" :title="product.title">{{ product.title }}</h3>
-                    <button
-                      class="fav-btn"
-                      :class="{ 'fav-btn-on': isFavorited(product.product_id) }"
-                      type="button"
-                      :disabled="favBusy === product.product_id"
-                      @click="toggleFavorite(product)"
-                    >
-                      {{ isFavorited(product.product_id) ? '已收藏' : '收藏' }}
-                    </button>
-                  </div>
+                  <h3 class="pick-title" :title="product.title">{{ product.title }}</h3>
 
                   <p class="pick-line">
                     <strong class="pick-price">{{ priceText(product) }}</strong>
@@ -868,25 +773,6 @@ function logout() {
         </div>
 
         <div class="composer">
-          <button
-            class="mic"
-            :class="{ 'mic-on': recording }"
-            type="button"
-            :disabled="!asrReady"
-            :title="asrReady ? (recording ? '点击结束录音' : '点击开始语音输入') : '服务端语音模型未就绪'"
-            :aria-label="recording ? '结束录音' : '开始语音输入'"
-            @click="toggleVoice"
-          >
-            <!-- 录音中显示秒数，否则显示麦克风图标 -->
-            <template v-if="recording">{{ recordSeconds }}s</template>
-            <svg v-else viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-4 4.9V19h2a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2h2v-3.1A5 5 0 0 1 7 11a1 1 0 1 1 2 0 3 3 0 0 0 6 0 1 1 0 1 1 2 0Z"
-              />
-            </svg>
-          </button>
-
           <textarea
             ref="textareaRef"
             v-model="input"
@@ -900,11 +786,7 @@ function logout() {
           </button>
         </div>
 
-        <p v-if="voiceError" class="mic-notice">{{ voiceError }}</p>
-        <p v-else class="hint">
-          回车发送 · Shift + 回车换行 · 点麦克风可以说话
-          <template v-if="!asrReady">（语音模型未就绪）</template>
-        </p>
+        <p class="hint">回车发送 · Shift + 回车换行</p>
       </div>
     </div>
       </div>

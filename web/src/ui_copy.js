@@ -1,16 +1,18 @@
 // PricePilot 首页推荐与会话管理的界面文案（写手Bot 2026-09-29，说明见 PricePilot_界面文案.md）
+// 调性：统一成「到手价鉴别所」——不吹便宜，只承诺把账算清楚、把来源摊开。
 export const EMPTY_STATE = {
-  title: '想买点什么？',
-  subtitle: '说清商品和预算，我来帮你找。',
-  recTitle: { profile: '按你的偏好挑了几件', favorites: '和你收藏的差不多', none: '不知道从哪开始？试试这样问' },
+  kicker: '到手价鉴别所',
+  title: '想买什么？先鉴别一下',
+  subtitle: '说清商品和预算，我把各家的真实到手价摊开算给你看。',
+  recTitle: { profile: '按你的一贯偏好挑的', favorites: '和你收藏的同类', none: '不知道从哪问起？先试这四句' },
   refresh: '换一批',
   refreshing: '正在换…',
-  refreshExhausted: '暂时只有这些，聊几句我能推得更准',
-  cardHint: '根据你的购物偏好推荐，偏好会随聊天自动更新',
+  refreshExhausted: '暂时就这些，多聊几句我能推得更准',
+  cardHint: '依据你的购物偏好推荐，偏好会随聊天自动更新',
   sampleQuestions: [
     '500 以内的无线机械键盘',
-    '适合通勤的降噪耳机，预算 1000',
-    '给爸妈买的血压计，要大屏的',
+    '通勤戴的降噪耳机，预算 1000',
+    '给爸妈买血压计，屏幕要大',
     '200 左右的保温杯，别太重',
   ],
 }

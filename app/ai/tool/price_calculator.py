@@ -1,19 +1,4 @@
-"""确定性定额优惠引擎 —— 全项目唯一的金额实现（主笔：B / Day 3）
-
-铁律（违反任何一条即视为 bug）：
-    1. 不调用 LLM 算数：整段是纯程序，同样输入永远得同样输出。
-    2. 禁止 float 充当金额事实：一律 Decimal。
-    3. 未知就是 None，不是 0：运费/税费未知时 payable_amount 直接为 None。
-    4. 不在负数上取零：优惠总和超过商品价说明规则异常，应拒绝而非掩盖。
-    5. 返现不扣进付款金额：只影响 estimated_net_cost。
-
-公式（手册《搜索、同款与价格引擎》）：
-    付款金额   = 商品价 − 可用且可叠加的即时优惠 + 运费 + 额外税费
-    预计成本   = 付款金额 − 未来满足条件时的预计返现
-
-只支持 CNY/USD、单件商品、原价门槛、定额优惠。
-它不是所有平台促销的通用算法：资格、证据与互斥关系必须由来源适配器先确认。
-"""
+"""优惠组合与付款金额计算。"""
 from datetime import datetime, timedelta
 from decimal import Decimal
 from itertools import combinations
@@ -31,20 +16,14 @@ MAX_PROMOTIONS_TO_ENUMERATE = 12
 
 
 def checked_amount(value: Decimal) -> Decimal:
-    """金额合法性检查：必须非负、有限、且符合两位小数精度。
-        处理负价、NaN、三位小数这类脏数据
-    """
+    """金额合法性检查：必须非负、有限、且符合两位小数精度。"""
     if not value.is_finite() or value < 0 or value != value.quantize(CENT):
         raise ValueError("金额必须非负、有限且符合两位小数精度")
     return value
 
 
 def compatible(selected) -> bool:
-    """一组优惠能否同时生效。
-    两种不兼容：
-      - 同一 exclusive_group（店铺券 vs 平台券互斥）
-      - stackable_with 未双向声明（A 认 B 但 B 不认 A，也不算可叠加）
-    """
+    """一组优惠能否同时生效。"""
     for a, b in combinations(selected, 2):
         if a.exclusive_group and a.exclusive_group == b.exclusive_group:
             return False
@@ -110,19 +89,12 @@ def _best_combination(usable, base: Decimal, shipping: Decimal, tax: Decimal):
 
 
 def calculate_quote(offer: Offer, now: datetime) -> PriceQuote:
-    """把一份报价算成一张价格凭证。四道关卡，顺序不可换。
+    """把一份报价算成一张价格凭证。四道关卡，顺序不可换。"""
 
-    关卡 0：now 必须带时区 —— 不带时区比较有效期，换个机器结果就不同。
-    关卡 1：资格前置 —— 不满足就不算数，而不是先算一个漂亮数字再发现它不成立。
-    关卡 2：金额量化与结构校验 —— 脏数据混进组合枚举会被放大。
-    关卡 3：逐条筛券 + 记原因 —— 不记原因就无法回答「为什么是这个金额」。
-    关卡 4：枚举组合取最低 —— 只算「全部相加」会把互斥券一起扣掉。
-    """
-    # ---------- 关卡 0：now 必须带时区 ----------
     if now.tzinfo is None:
         raise ValueError("now 必须包含时区")
 
-    # ---------- 关卡 1：资格前置校验 ----------
+
     fresh, reasons = _gate_reasons(offer, now)
 
     common = dict(
@@ -133,15 +105,14 @@ def calculate_quote(offer: Offer, now: datetime) -> PriceQuote:
     )
 
     if reasons:
-        # 关键：payable_amount 给 None 而不是 0，
-        # verification_level 标 unverified，reasons 写清每一条原因。
+        # 关键：payable_amount 给 None 而不是 0。
         return PriceQuote(
             **common, payable_amount=None, estimated_net_cost=None,
             verification_level="unverified",
             freshness="fresh" if fresh else "stale", reasons=reasons,
         )
 
-    # ---------- 关卡 2：金额量化 + 结构校验 ----------
+
     base = checked_amount(offer.item_price)
     shipping = checked_amount(offer.shipping)
     tax = checked_amount(offer.tax)
@@ -155,7 +126,7 @@ def calculate_quote(offer: Offer, now: datetime) -> PriceQuote:
 
     usable, excluded = _usable_promotions(offer, now, base)
 
-    # ---------- 关卡 4：枚举 ----------
+
     best, chosen = _best_combination(usable, base, shipping, tax)
 
     # 未被选中的可用券也要给出原因，否则用户会问「这张券为什么没用」
@@ -164,7 +135,7 @@ def calculate_quote(offer: Offer, now: datetime) -> PriceQuote:
         if p.promotion_id not in chosen_ids:
             excluded[p.promotion_id] = "未进入最低有效组合"
 
-    # ---------- 收尾两道保险 ----------
+
     if cashback > best:
         raise ValueError("返现超过付款金额，需要核查规则")
 
@@ -182,13 +153,7 @@ def calculate_quote(offer: Offer, now: datetime) -> PriceQuote:
 
 
 def calculate_conditional_scenario(offer: Offer, now: datetime) -> PriceQuote | None:
-    """资格未知的券另算一个「条件场景」，绝不混进已核验报价。
-
-    场景：把所有因「资格未确认或不满足」而被排除的券当作成立，其余规则不变。
-    返回的凭证固定标 unverified，并在 reasons 里写明这是假设场景，
-    让界面能如实展示「要是你是会员，就是 X 元」。
-    没有任何资格未知的券时返回 None（没有场景可讲）。
-    """
+    """资格未知的券另算一个「条件场景」，绝不混进已核验报价。"""
     if now.tzinfo is None:
         raise ValueError("now 必须包含时区")
 

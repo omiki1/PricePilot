@@ -1,17 +1,5 @@
 # -*- coding: utf-8 -*-
-"""PricePilot 建库脚本（B · 决策引擎）
-
-用途：在没有 mysql 客户端（或不想配 PATH）的机器上，一键执行 db/schema_mysql.sql 并自检。
-依赖：仅 PyMySQL（已在 requirements.txt 里）。不依赖 python-dotenv。
-
-用法（在项目根目录 D:\\TechAgentStu\\PricePilot 下执行）：
-    python db/init_db.py                 # 建库建表 + 自检
-    python db/init_db.py --check-only    # 只连库自检，不执行 DDL
-    python db/init_db.py --sql db/schema_mysql.sql
-
-读 .env 的顺序：<项目根>/.env ；也可以用环境变量 DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME 覆盖。
-注意：本脚本不包含任何 DROP 操作，重复执行安全（建表语句均为 IF NOT EXISTS）。
-"""
+"""PricePilot 建库脚本"""
 
 from __future__ import annotations
 

@@ -55,8 +55,7 @@ async def read_favorites(
     user_id: str = Query(default='default', max_length=64),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> FavoriteListResponse:
-    """列出某个用户自己的收藏
-    """
+    """列出某个用户自己的收藏"""
     try:
         items = list_favorites(user_id, limit=limit)
         total = count_favorites(user_id)
@@ -72,11 +71,7 @@ async def read_price_history(
     product_id: str = Query(..., max_length=191),
     limit: int = Query(default=60, ge=1, le=500),
 ) -> PriceHistoryResponse:
-    """某个商品的价格记录，按时间正序，前端直接从上往下列。
-
-    只给数据不做判断：不在这里算涨跌、不判历史最低价 ——
-    样本太少时那种结论本身就是误导。
-    """
+    """某个商品的价格记录，按时间正序，前端直接从上往下列。"""
     try:
         points = price_history(product_id, limit=limit)
     except PriceHistoryError as exc:
