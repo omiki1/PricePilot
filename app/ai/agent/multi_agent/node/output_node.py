@@ -41,15 +41,6 @@ def build_context(state):
     ]
 
 
-    # 「便宜」这种没有数字的诉求，光给「预算：0」模型会当成"不限预算"。
-    price_pref = (state.get('price_pref') or '').strip().lower()
-    if price_pref == 'cheap':
-        lines.append('价格偏好：用户要"便宜 / 平价"，候选已只保留价格偏低的那一档，'
-                     '推荐理由里要体现这一点。')
-    elif price_pref == 'premium':
-        lines.append('价格偏好：用户偏向"高端 / 旗舰"，不特别省钱，重品质。')
-
-
     # 商品是美元价、预算是人民币，不给汇率说明模型容易自己编一个。
     fx = rate_note()
     if fx:
@@ -97,4 +88,10 @@ async def output_node(state: ShoppingState):
             'evidence': product.evidence,
         }))
 
-    return {'answer': {'text': reply.content, 'products': products}}
+    # 本轮结束清空状态里的品类与预算：下一轮从用户新输入重新抽取，
+    # 避免上一轮的 category / price 残留进追问与检索。
+    return {
+        'answer': {'text': reply.content, 'products': products},
+        'category': '',
+        'price': 0,
+    }

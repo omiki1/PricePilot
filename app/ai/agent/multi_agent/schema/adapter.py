@@ -2,7 +2,7 @@ from app.ai.agent.multi_agent.schema.shopping_schema import ShopifySearchInput
 from app.ai.agent.multi_agent.state.shopping_state import ShoppingState
 
 
-BUDGET_MIN_RATIO = 0
+BUDGET_MIN_RATIO = 0.1
 CNY_PER_USD = 6.75
 
 # 折算用固定汇率：1 单位外币 = ? 人民币。查不到的外币不参与区间比较。
@@ -31,7 +31,11 @@ def _to_usd_cents(price_cny: float | None) -> int | None:
 def budget_range_usd_cents(
     state: ShoppingState
 ) -> tuple[int | None, int | None]:
-    """把人民币预算换算成 (底价, 上限) 两端的美元分。"""
+    """把人民币预算换算成 (底价, 上限) 两端的美元分。
+
+    语义：底价 = 上限 ×(1 - ratio)，即"在上限之下留出 ratio 的幅度"。
+      预算 12000、ratio 0.1 → 区间 10800 ~ 12000
+    """
     max_cents = _to_usd_cents(state.get("price"))
     if not max_cents:
         return None, None
@@ -48,7 +52,6 @@ def map_state_to_shopify(
         query=state["category"],
         max_price=max_price,
         min_price=min_price,
-        price_pref=(state.get("price_pref") or "").strip().lower(),
     )
 
 
@@ -88,35 +91,17 @@ def _to_cny(amount: float | None, currency: str | None) -> float | None:
     return amount * rate
 
 
-# 不发明绝对价格（"便宜"对耳机是 100 元、对笔记本是 3000 元），而是在**本次候选集内部**。
-CHEAP_KEEP_RATIO = 0.5
-
-
-def _keep_cheaper_half(products: list) -> tuple[list, dict]:
-    """保留低价一半及价格未知的商品，相同价格一起保留。"""
-    if len(products) < 2:
-        return products, {"cheap_kept": len(products), "cheap_dropped": 0,
-                          "cheap_ceil_cny": None}
-    priced = [(p, _to_cny(p.min_price, p.currency)) for p in products]
-    known = sorted(cny for _, cny in priced if cny is not None)
-    if len(known) < 2:
-        return products, {"cheap_kept": len(products), "cheap_dropped": 0,
-                          "cheap_ceil_cny": None}
-    index = max(0, int(len(known) * CHEAP_KEEP_RATIO) - 1)
-    threshold = known[index]
-    kept = [p for p, cny in priced if cny is None or cny <= threshold]
-    return kept, {
-        "cheap_kept": len(kept),
-        "cheap_dropped": len(products) - len(kept),
-        "cheap_ceil_cny": round(threshold),
-    }
-
-
-def _filter_by_max_price(
+def filter_products_by_budget(
     products: list,
     input_data: ShopifySearchInput
 ) -> tuple[list, dict]:
-    """按预算筛选，未知币种保留并计数。"""
+    """按预算区间 (min, max) 严格筛选，返回 (保留的商品, 统计信息)。
+
+    两端都是人民币：min/max 由 budget_range_usd_cents 换算而来，这里把商品
+    价格也折成人民币再比较，所以不同币种可以放在一起比。
+    没货就返回空列表——上层如实呈现「没找到」，不构造兜底推荐。
+    汇率表里没有的币种无法比较，原样保留并计入 unknown_currency。
+    """
     if not input_data.max_price:
         return products, {"kept": len(products), "dropped_below": 0,
                           "dropped_above": 0, "unknown_currency": 0}
@@ -148,15 +133,3 @@ def _filter_by_max_price(
         "floor_cny": round(low_cny) if low_cny else None,
         "ceil_cny": round(high_cny),
     }
-
-
-def filter_products_by_budget(
-    products: list,
-    input_data: ShopifySearchInput
-) -> tuple[list, dict]:
-    """本地复核：先按预算上限筛，再按定性偏好（便宜）相对收窄。"""
-    products, report = _filter_by_max_price(products, input_data)
-    if input_data.price_pref == "cheap":
-        products, cheap_report = _keep_cheaper_half(products)
-        report.update(cheap_report)
-    return products, report

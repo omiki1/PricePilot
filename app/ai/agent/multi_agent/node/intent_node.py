@@ -8,20 +8,6 @@ from app.ai.tool.jev_router import should_clarify
 
 prompt = BuilderPromptYaml.get_prompt('intent_node.yaml')
 
-CHEAP_WORDS = ('cheap', 'low', 'budget', '便宜', '平价', '实惠')
-PREMIUM_WORDS = ('premium', 'high', 'luxury', '高端', '旗舰')
-
-
-def normalize_price_pref(raw) -> str:
-    """把模型给的定性价格偏好收敛到 '' / 'cheap' / 'premium' 三种写法。"""
-    value = str(raw or '').strip().lower()
-    if value in CHEAP_WORDS:
-        return 'cheap'
-    if value in PREMIUM_WORDS:
-        return 'premium'
-    return ''
-
-
 def verify_clarify(user_input: str, fallback: str) -> str:
     if should_clarify(user_input):
         return fallback
@@ -53,8 +39,7 @@ def _previous_turn(state: ShoppingState) -> str:
     prev_question = str(state.get('question') or '').strip()
     carried = []
     for key, label, note in (('category', '品类', '话题级，换话题时丢弃'),
-                             ('price', '预算', '会话级，继续沿用'),
-                             ('price_pref', '价格偏好', '会话级，继续沿用')):
+                             ('price', '预算', '会话级，继续沿用')):
         value = state.get(key)
         if value:
             carried.append(f'{label}={value}（{note}）')
@@ -76,7 +61,7 @@ TOPIC_SWITCH_RULE = (
     '1) 如果「用户新输入」本身已经说清楚要买什么（自带品类，如「秋季外套」「机械键盘」），'
     '那就是**新话题**：上一轮的品牌 / 主题必须丢掉，category 只按新输入写，'
     '绝不允许把上一轮的品牌（如米哈游、鸣潮）拼进来；'
-    '上一轮的预算和价格偏好属于会话级设定，除非本轮给出了新的，否则继续沿用。\n'
+    '上一轮的预算属于会话级设定，除非本轮给出了新的，否则继续沿用。\n'
     '2) 只有当「用户新输入」自己没有独立品类、只是在补充时'
     '（如「手办」「徽章」「要便宜的」「再来一个」），'
     '才把上一轮的品牌 / 主题 / 预算一并补进来。'
@@ -113,16 +98,12 @@ def intent_node(state: ShoppingState):
             print('[intent] Jev 改成 search 但没有检索词，仍走追问')
             router = 'clarify'
 
-    # 模型可能给出 'cheap' / '便宜' / 'low' 等写法，统一收敛到 '', cheap, premium。
-    price_pref = normalize_price_pref(data.get('price_pref'))
-
     print(f"[intent] router={router} category={data['category']!r} "
-          f"price={data['price']} price_pref={price_pref!r} question={data['question']!r}",
+          f"price={data['price']} question={data['question']!r}",
           flush=True)
 
     out = {
         'router': router,
-        'price_pref': price_pref,
         'question': data['question'] if router in ('clarify', 'reject') else '',
     }
     # 闲聊/拒绝不覆盖上一轮的品类和预算，下一轮检索还用得上

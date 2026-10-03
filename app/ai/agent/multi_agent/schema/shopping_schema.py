@@ -11,9 +11,6 @@ class ShopifySearchInput(BaseModel):
     min_price: int | None = None
     max_price: int | None = None
 
-    # max_price 只能表达"有多少钱"，表达不了"想买便宜的"。
-    price_pref: str = ''
-
 
 class Product(BaseModel):
     platform: str
