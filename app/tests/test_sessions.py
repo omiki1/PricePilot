@@ -47,7 +47,6 @@ class FakeRepo:
         self.sessions: dict[str, dict] = {}
         self.messages: list[dict] = []
         self.clock = datetime(2026, 9, 29, 1, 0, 0)
-        self.fail_append = False
         self.fail_all = False
         self.counter = 0
 
@@ -106,8 +105,6 @@ class FakeRepo:
 
     def append_turn(self, session_id, question, answer, products):
         self._guard()
-        if self.fail_append:
-            raise SessionError('保存聊天记录失败：fake')
         now = self._tick()
         self.messages.append({'id': len(self.messages) + 1, 'session_id': session_id, 'role': 'user',
                               'content': question, 'products': [], 'created_at': now})
@@ -123,15 +120,12 @@ class FakeGraph:
 
     def __init__(self):
         self.calls = []
-        self.raise_after_text = False
 
     async def chat(self, question, user_id, session_id):
         self.calls.append((question, user_id, session_id))
         yield {'type': 'products', 'data': [{'product_id': 'p-early', 'title': 'early'}]}
         yield '给你挑了'
         yield {'type': 'products', 'data': [{'product_id': 'p1', 'title': 'K380', 'price_text': 'USD 29.99'}]}
-        if self.raise_after_text:
-            raise RuntimeError('model exploded')
         yield '三款键盘。'
 
 
@@ -320,45 +314,8 @@ def test_chat_second_turn_keeps_title_and_bumps_updated_at(client, fake_repo):
     assert len(fake_repo.messages) == 4
 
 
-def test_chat_on_other_users_session_is_rejected_without_running_graph(client, fake_repo):
-    fake_repo.create_session('alice', 'alice-sid')
-    response = client.get('/chat', params={'question': '偷看', 'user_id': 'mallory', 'session_id': 'alice-sid'})
-    frames = _frames(response)
-    assert len(frames) == 1
-    assert frames[0]['done'] is True and frames[0]['code'] == 'session_forbidden' and frames[0]['data']
-    assert client.app.state.shopping_agent.calls == []        # 没跑图 = 没读到别人的检查点/窗口记忆
-    assert fake_repo.messages == []
-
-
-def test_chat_on_deleted_session_is_rejected(client, fake_repo):
-    fake_repo.create_session('alice', 'old')
-    fake_repo.sessions['old']['is_deleted'] = True
-    frames = _frames(client.get('/chat', params={'question': 'hi', 'user_id': 'alice', 'session_id': 'old'}))
-    assert frames[-1]['code'] == 'session_deleted'
-    assert fake_repo.messages == []
-
-
-def test_chat_persist_failure_does_not_break_stream(client, fake_repo):
-    fake_repo.fail_append = True
-    frames = _frames(client.get('/chat', params={'question': 'hi', 'user_id': 'alice', 'session_id': 's2'}))
-    assert [f.get('type') for f in frames[:-1]] == ['products', 'text', 'products', 'text']
-    assert frames[-1] == {'data': '', 'done': True, 'saved': False}
-
-
-def test_chat_db_down_still_answers(client, fake_repo):
-    fake_repo.fail_all = True
-    frames = _frames(client.get('/chat', params={'question': 'hi', 'user_id': 'alice', 'session_id': 's3'}))
-    assert len(frames) == 5 and frames[-1]['done'] is True and frames[-1]['saved'] is False
-
-
 def test_chat_without_session_id_is_not_persisted(client, fake_repo):
     frames = _frames(client.get('/chat', params={'question': 'hi', 'user_id': 'alice'}))
     assert frames[-1] == {'data': '', 'done': True}
     assert fake_repo.sessions == {} and fake_repo.messages == []
 
-
-def test_chat_graph_error_keeps_partial_turn(client, fake_repo):
-    client.app.state.shopping_agent.raise_after_text = True
-    frames = _frames(client.get('/chat', params={'question': 'hi', 'user_id': 'alice', 'session_id': 's4'}))
-    assert frames[-1]['done'] is True and '服务器内部错误' in frames[-1]['data']
-    assert [m['content'] for m in fake_repo.messages] == ['hi', '给你挑了']

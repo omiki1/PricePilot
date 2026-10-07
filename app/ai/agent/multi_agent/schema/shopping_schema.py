@@ -27,5 +27,4 @@ class Product(BaseModel):
     available: bool | None = None
 
     score: float | None = None  # 贝叶斯加权分
-    score_reason: str = ''  # 为什么是这个分，给用户看
     evidence: list[dict] = []  # 网络搜索找到的第三方证据
