@@ -1,5 +1,5 @@
-from __future__ import annotations
-from datetime import datetime
+
+from datetime import datetime, timezone
 from app.ai.tool.mysql_tool import MySQL
 
 # 表里的全部列，写 SQL 时抄这个顺序
@@ -39,13 +39,13 @@ def add_favorite(user_id: str, product) -> dict:
     owner = str(user_id or "default").strip() or "default"
     title = str(raw.get("title") or "").strip() or "(无标题)"
     params = (
-        owner[:64],
+        owner[:64],#
         product_id[:191],
         title[:512],
         text(raw.get("image_url"), 1024),
         text(raw.get("product_url") or raw.get("url"), 1024),
         raw.get("price"),
-        datetime.utcnow().replace(microsecond=0),
+        datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0),
     )
 
     SQL_UPSERT = """INSERT INTO favorite_product
@@ -72,7 +72,7 @@ def add_favorite(user_id: str, product) -> dict:
         conn.close()
 
     if not saved:
-        raise FavoriteError("写入后读不回收藏记录：" + product_id)
+        raise FavoriteError("写入后，读不回收藏记录：" + product_id)
     return _row(saved)
 
 

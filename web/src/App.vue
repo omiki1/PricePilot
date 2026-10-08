@@ -1,18 +1,22 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
   addFavorite,
   createSession,
   deleteSession,
+  fetchAsrStatus,
   fetchFavorites,
   fetchPriceHistory,
   fetchSessionMessages,
   fetchSessions,
   openChat,
+  refreshProductPrice,
   removeFavorite,
   renameSession,
+  transcribeAudio,
 } from './api.js'
 import { renderMarkdown } from './markdown.js'
+import { createRecorder, isRecordingSupported } from './recorder.js'
 import LoginView from './LoginView.vue'
 import HomeRecs from './HomeRecs.vue'
 import SessionSidebar from './SessionSidebar.vue'
@@ -450,6 +454,117 @@ function pointTime(point) {
   return parsed.toLocaleString('zh-CN', { hour12: false })
 }
 
+/**
+ * 刷新价格：后端重新去查这件商品的当前价，判重后决定要不要记一笔。
+ * 请求期间保留旧列表（不闪空），完成后用后端返回的 message 提示结果。
+ * 卡片上那份价格只作为兜底传过去：回查不到时后端会如实标注"来源=卡片"。
+ */
+async function refreshPricePanel(item) {
+  const productId = item.product_id
+  const current = pricePanels[productId] || { collapsed: false, points: [] }
+  pricePanels[productId] = {
+    collapsed: false, loading: true, error: '', points: current.points || [],
+  }
+  try {
+    const raw = item.price
+    const fallbackPrice = raw === null || raw === undefined || raw === '' ? Number.NaN : Number(raw)
+    const data = await refreshProductPrice({
+      userId: userId.value,
+      productId,
+      fallbackPrice,
+    })
+    pricePanels[productId] = {
+      collapsed: false, loading: false, error: '', points: data.points || [],
+    }
+    showToast(data.message || `已刷新，共 ${(data.points || []).length} 条价格记录`)
+  } catch (error) {
+    pricePanels[productId] = {
+      collapsed: false, loading: false,
+      error: error.message || '价格记录刷新失败',
+      points: current.points || [],
+    }
+  }
+}
+
+// ---------- 语音输入（浏览器录音 → 上传 → Vosk 识别 → 填进输入框） ----------
+
+// 浏览器不支持录音（老浏览器 / 非安全上下文）时按钮直接不渲染
+const voiceSupported = isRecordingSupported()
+const voiceReady = ref(false)        // 服务端模型是否已加载
+const voiceRecording = ref(false)
+const voiceBusy = ref(false)         // 上传 + 识别中
+let recorder = null
+let voicePollTimer = null
+
+/** 问一次模型状态；没就绪就隔 5 秒再问（模型预热约 18 秒）。 */
+async function checkVoiceReady(pollLeft = 0) {
+  try {
+    const data = await fetchAsrStatus()
+    voiceReady.value = !!data.ready
+  } catch (exception) {
+    voiceReady.value = false
+  }
+  if (!voiceReady.value && pollLeft > 0) {
+    clearTimeout(voicePollTimer)
+    voicePollTimer = setTimeout(() => checkVoiceReady(pollLeft - 1), 5000)
+  }
+}
+
+/** 点一下开始录，再点一下结束并识别。 */
+async function toggleVoice() {
+  if (voiceBusy.value) return
+  if (voiceRecording.value) {
+    await stopVoice()
+    return
+  }
+  if (!voiceReady.value) {
+    showToast('语音模型还在加载，请稍候再试')
+    checkVoiceReady(6)
+    return
+  }
+  try {
+    recorder = createRecorder()
+    await recorder.start()
+    voiceRecording.value = true
+  } catch (error) {
+    recorder = null
+    voiceRecording.value = false
+    showToast(error.message || '打不开麦克风，请检查浏览器权限')
+  }
+}
+
+async function stopVoice() {
+  if (!recorder) return
+  voiceRecording.value = false
+  voiceBusy.value = true
+  try {
+    const blob = await recorder.stop()
+    const data = await transcribeAudio({ userId: userId.value, blob })
+    const text = (data.text || '').trim()
+    if (!text) {
+      showToast(data.hint || '没听清，靠近麦克风再说一次')
+      return
+    }
+    // 输入框已有内容时接在后面，不覆盖用户已经打的字
+    const typed = input.value.trim()
+    input.value = typed ? `${typed}${text}` : text
+    await nextTick()
+    autoGrow()
+    textareaRef.value?.focus()
+  } catch (error) {
+    showToast(error.message || '语音识别失败')
+  } finally {
+    recorder = null
+    voiceBusy.value = false
+  }
+}
+
+function cancelVoice() {
+  if (recorder) recorder.cancel()
+  recorder = null
+  voiceRecording.value = false
+}
+
 function toggleFavorites() {
   if (showFavorites.value) {
     showFavorites.value = false
@@ -466,6 +581,13 @@ onMounted(async () => {
     await restoreSession()
   }
   textareaRef.value?.focus()
+  // 语音模型在服务端后台预热（约 18 秒），先问一次，没就绪会自动重试
+  if (voiceSupported) checkVoiceReady(6)
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(voicePollTimer)
+  cancelVoice()
 })
 
 /** 进页面 / 登录后：拉会话列表，上次停留的会话还在就打开它，否则停在新对话页。 */
@@ -766,12 +888,25 @@ function logout() {
             @input="autoGrow"
             @keydown="onKeydown"
           ></textarea>
+          <button
+            v-if="voiceSupported"
+            class="mic"
+            :class="{ 'mic-live': voiceRecording }"
+            type="button"
+            :disabled="voiceBusy || sending"
+            :title="voiceReady ? '点一下开始录音，再点一下结束并识别' : '语音模型加载中…'"
+            @click="toggleVoice"
+          >
+            {{ voiceRecording ? '■' : '🎤' }}
+          </button>
           <button class="send" type="button" :disabled="sending || !input.trim()" @click="onSend">
             {{ sending ? '···' : '↑' }}
           </button>
         </div>
 
-        <p class="hint">回车发送 · Shift + 回车换行</p>
+        <p class="hint">
+          回车发送 · Shift + 回车换行<span v-if="voiceSupported"> · 点麦克风语音输入</span>
+        </p>
       </div>
     </div>
       </div>
@@ -835,8 +970,25 @@ function logout() {
 
               <!-- 价格记录：点上面的按钮才展开，数据也是那时才请求 -->
               <div v-if="pricePanel(item) && !pricePanel(item).collapsed" class="price-panel">
-                <p v-if="pricePanel(item).loading" class="price-empty">正在读取…</p>
-                <p v-else-if="pricePanel(item).error" class="price-error">{{ pricePanel(item).error }}</p>
+                <div class="price-panel-head">
+                  <span class="price-panel-title">价格记录</span>
+                  <button
+                    class="price-refresh"
+                    type="button"
+                    :disabled="pricePanel(item).loading"
+                    @click="refreshPricePanel(item)"
+                  >
+                    {{ pricePanel(item).loading ? '刷新中…' : '刷新' }}
+                  </button>
+                </div>
+
+                <p v-if="pricePanel(item).error" class="price-error">{{ pricePanel(item).error }}</p>
+                <p
+                  v-else-if="pricePanel(item).loading && !pricePanel(item).points.length"
+                  class="price-empty"
+                >
+                  正在读取…
+                </p>
 
                 <ul v-else-if="pricePanel(item).points.length" class="price-list">
                   <li v-for="(point, i) in pricePanel(item).points" :key="i">

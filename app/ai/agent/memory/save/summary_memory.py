@@ -2,9 +2,7 @@
 
 import asyncio
 import os
-
 import psycopg
-from psycopg.rows import tuple_row
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,13 +15,14 @@ _conninfo = os.getenv("POSTGRESQL_URL") or (
 class SummaryMemory:
     """一次会话一份摘要，按 session_id UPSERT 覆盖。"""
 
-    def __init__(self, session_id, conninfo: str = ""):
+    def __init__(self, session_id):
         self.session_id = session_id
-        self.conninfo = conninfo or _conninfo
+        self.conninfo = _conninfo
 
     # ── 同步实现（真正的数据库操作）──
     def _save_sync(self, summary: str):
-        with psycopg.connect(self.conninfo, connect_timeout=5, row_factory=tuple_row) as conn:
+        # 连接数据库
+        with psycopg.connect(self.conninfo, connect_timeout=5,) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -37,7 +36,8 @@ class SummaryMemory:
             conn.commit()
 
     def _query_sync(self) -> str:
-        with psycopg.connect(self.conninfo, connect_timeout=5, row_factory=tuple_row) as conn:
+        # 连接数据库
+        with psycopg.connect(self.conninfo, connect_timeout=5,) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT summary FROM conversation_summary WHERE session_id = %s",

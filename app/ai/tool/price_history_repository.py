@@ -1,5 +1,5 @@
-from __future__ import annotations
-from datetime import datetime
+
+from datetime import datetime, timezone
 from decimal import Decimal
 from app.ai.tool.mysql_tool import MySQL
 
@@ -34,7 +34,7 @@ def record_price(product_id: str, price) -> dict:
         return {"recorded": False, "reason": "no_price"}
 
     amount = price if isinstance(price, Decimal) else Decimal(str(price))
-    moment = datetime.utcnow().replace(microsecond=0)
+    moment = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
 
     SQL_LATEST = ("SELECT price FROM product_price_history "
                   "WHERE product_id = %s ORDER BY recorded_at DESC, id DESC LIMIT 1")

@@ -11,10 +11,10 @@ class SessionManager:
         self.summary_memory = self.prompt_builder.summary_memory
         self.long_memory = self.prompt_builder.long_memory
         self.profile_memory = self.prompt_builder.profile_memory
-
+    # 保存会话记忆
     async def save(self, role: str, content: str):
         await self.window_memory.save(role, content)
-
+    # 构建提示
     async def build_prompt(self, user_id, question):
         prompt = await self.prompt_builder.builder_prompt(user_id, question)
         return {'role': 'system', 'content': prompt}

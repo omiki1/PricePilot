@@ -66,3 +66,26 @@ class PriceHistoryResponse(BaseModel):
 
     product_id: str = Field(description="商品 ID")
     points: list[PricePoint] = Field(default_factory=list, description="价格记录，时间正序")
+
+
+class PriceRefreshRequest(BaseModel):
+    """POST /api/products/price-history/refresh：回查商品当前价，再决定是否记一笔。"""
+
+    user_id: str = Field(default="default", max_length=64, description="用户 ID")
+    product_id: str = Field(..., min_length=1, max_length=191, description="来源商品 ID")
+    fallback_price: float | None = Field(
+        default=None, ge=0,
+        description="回查不到时用这个价格兜底（前端卡片上那份）；不给就不写",
+    )
+
+
+class PriceRecordResponse(BaseModel):
+    """回查 + 记账的结果。是否真的写入由仓储层判重决定（与上一条相同就不写）。"""
+
+    product_id: str = Field(description="商品 ID")
+    recorded: bool = Field(description="本次是否真的新增了一条（价格没变则为 false）")
+    reason: str = Field(default="", description="ok / unchanged / no_price / not_found / no_title / no_price_fallback")
+    message: str = Field(default="", description="给用户看的一句话")
+    price: float | None = Field(default=None, description="本次用的价格（原币种金额）")
+    source: str = Field(default="", description="价格来源：shopify=回查到的；fallback=卡片兜底价")
+    points: list[PricePoint] = Field(default_factory=list, description="写入后的价格记录，时间正序")

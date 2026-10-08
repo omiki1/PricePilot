@@ -5,7 +5,7 @@ from app.ai.agent.multi_agent.state.shopping_state import ShoppingState
 BUDGET_MIN_RATIO = 0.1
 CNY_PER_USD = 6.75
 
-# 折算用固定汇率：1 单位外币 = ? 人民币。查不到的外币不参与区间比较。
+# 固定汇率：1 单位外币对应的人民币金额。
 CNY_PER_CURRENCY = {
     "USD": CNY_PER_USD,
     "AUD": 4.771,
@@ -18,36 +18,19 @@ CNY_PER_CURRENCY = {
     "IDR": 0.000415,
     "VND": 0.000258,
     "JPY": 0.0475,
-    "CNY":1.000
+    "CNY": 1.000,
 }
 
 
-def _to_usd_cents(price_cny: float | None) -> int | None:
-    if not price_cny:
-        return None
-    return round(price_cny / CNY_PER_USD * 100)
-
-
-def budget_range_usd_cents(
-    state: ShoppingState
-) -> tuple[int | None, int | None]:
-    """把人民币预算换算成 (底价, 上限) 两端的美元分。
-
-    语义：底价 = 上限 ×(1 - ratio)，即"在上限之下留出 ratio 的幅度"。
-      预算 12000、ratio 0.1 → 区间 10800 ~ 12000
-    """
-    max_cents = _to_usd_cents(state.get("price"))
-    if not max_cents:
-        return None, None
-    if BUDGET_MIN_RATIO <= 0:
-        return None, max_cents
-    return round(max_cents * (1.0 - BUDGET_MIN_RATIO)), max_cents
-
-
-def map_state_to_shopify(
-    state: ShoppingState
-) -> ShopifySearchInput:
-    min_price, max_price = budget_range_usd_cents(state)
+def map_state_to_shopify(state: ShoppingState) -> ShopifySearchInput:
+    """把品类和人民币预算转成检索条件，价格单位为美元分。"""
+    budget = state.get("price")
+    max_price = round(budget / CNY_PER_USD * 100) if budget else None
+    if not max_price:
+        max_price = None
+    min_price = None
+    if max_price and BUDGET_MIN_RATIO > 0:
+        min_price = round(max_price * (1 - BUDGET_MIN_RATIO))
     return ShopifySearchInput(
         query=state["category"],
         max_price=max_price,
@@ -56,13 +39,10 @@ def map_state_to_shopify(
 
 
 def build_shopify_arguments(input_data: ShopifySearchInput):
-    filters = {
-        "available": True
-    }
+    """组装 MCP 请求参数，不发送请求。"""
+    filters = {"available": True}
     if input_data.max_price:
-        filters["price"] = {
-            "max": input_data.max_price
-        }
+        filters["price"] = {"max": input_data.max_price}
     return {
         "meta": {
             "ucp-agent": {
@@ -81,27 +61,11 @@ def build_shopify_arguments(input_data: ShopifySearchInput):
     }
 
 
-def _to_cny(amount: float | None, currency: str | None) -> float | None:
-    """把商品标价折算成人民币，用于跨币种比较。"""
-    if amount is None or not currency:
-        return None
-    rate = CNY_PER_CURRENCY.get(currency.upper())
-    if not rate:
-        return None
-    return amount * rate
-
-
 def filter_products_by_budget(
     products: list,
     input_data: ShopifySearchInput
 ) -> tuple[list, dict]:
-    """按预算区间 (min, max) 严格筛选，返回 (保留的商品, 统计信息)。
-
-    两端都是人民币：min/max 由 budget_range_usd_cents 换算而来，这里把商品
-    价格也折成人民币再比较，所以不同币种可以放在一起比。
-    没货就返回空列表——上层如实呈现「没找到」，不构造兜底推荐。
-    汇率表里没有的币种无法比较，原样保留并计入 unknown_currency。
-    """
+    """折成人民币后按预算筛选；未知价格或币种保留并计数。"""
     if not input_data.max_price:
         return products, {"kept": len(products), "dropped_below": 0,
                           "dropped_above": 0, "unknown_currency": 0}
@@ -112,11 +76,12 @@ def filter_products_by_budget(
 
     kept, below, above, unknown = [], 0, 0, 0
     for product in products:
-        price_cny = _to_cny(product.min_price, product.currency)
-        if price_cny is None:
+        rate = CNY_PER_CURRENCY.get((product.currency or "").upper())
+        if product.min_price is None or not rate:
             unknown += 1
             kept.append(product)
             continue
+        price_cny = product.min_price * rate
         if low_cny is not None and price_cny < low_cny:
             below += 1
             continue

@@ -164,6 +164,53 @@ export async function fetchPriceHistory({ productId, limit = 60 }) {
   return response.json()
 }
 
+/**
+ * 刷新价格：后端重新去查这个商品的当前价，再判重记一笔。
+ * 返回 { recorded, reason, message, price, source, points }；points 是最新列表，不用再 GET。
+ * fallbackPrice 是卡片上那份价格，只在后端回查不到时兜底（会被如实标注来源）。
+ */
+export async function refreshProductPrice({ userId, productId, fallbackPrice }) {
+  const response = await fetch(`${API_BASE}/api/products/price-history/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId || 'default',
+      product_id: productId,
+      fallback_price: Number.isFinite(fallbackPrice) ? fallbackPrice : null,
+    }),
+  })
+  if (!response.ok) throw await readError(response)
+  return response.json()
+}
+
+/**
+ * 语音功能是否可用。返回 { ready }。
+ * ready=false 有两种原因：VOSK_PATH 没配、或模型还在预热（约 18 秒）。前端据此置灰麦克风。
+ */
+export async function fetchAsrStatus() {
+  const response = await fetch(`${API_BASE}/api/asr/status`)
+  if (!response.ok) throw await readError(response)
+  return response.json()
+}
+
+/**
+ * 上传一段 WAV（16k / 16bit / 单声道）换文字。返回 { text, ready, hint? }。
+ *
+ * multipart 请求不能用 JSON body 传身份，所以 user_id 走查询参数
+ * —— 后端 deps.get_current_user_id 对 multipart 读不出 body，只能从 query 取。
+ */
+export async function transcribeAudio({ userId, blob }) {
+  const params = new URLSearchParams({ user_id: userId || 'default' })
+  const form = new FormData()
+  form.append('audio', blob, 'speech.wav')
+  const response = await fetch(`${API_BASE}/api/asr?${params.toString()}`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!response.ok) throw await readError(response)
+  return response.json()
+}
+
 /** 拉收藏夹。返回 { user_id, total, favorites: [...] }。 */
 export async function fetchFavorites({ userId, limit = 100 } = {}) {
   const params = new URLSearchParams({
