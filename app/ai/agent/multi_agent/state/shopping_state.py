@@ -8,8 +8,6 @@ class ShoppingState(TypedDict):
     category: str
     price: float
 
-    # 无具体预算时，用 cheap / premium 表示价格偏好。
-    price_pref: str
     # 搜索结果与排名后的商品。
     products: list
     # 意图识别，走哪一个节点

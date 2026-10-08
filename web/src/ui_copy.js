@@ -69,7 +69,6 @@ export const ERRORS = {
   forbidden: '这段对话不属于当前账号。',
   actionFailed: '操作失败，稍后再试',
   streamBroken: '连接断了，这一轮没说完。可以再发一次。',
-  saveFailed: '这轮回答没存进历史，刷新后会看不到。',
   loginRequired: '登录后才能保存和查看历史对话',
 }
 

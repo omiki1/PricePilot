@@ -11,9 +11,6 @@ class ShopifySearchInput(BaseModel):
     min_price: int | None = None
     max_price: int | None = None
 
-    # max_price 只能表达"有多少钱"，表达不了"想买便宜的"。
-    price_pref: str = ''
-
 
 class Product(BaseModel):
     platform: str
@@ -30,5 +27,4 @@ class Product(BaseModel):
     available: bool | None = None
 
     score: float | None = None  # 贝叶斯加权分
-    score_reason: str = ''  # 为什么是这个分，给用户看
     evidence: list[dict] = []  # 网络搜索找到的第三方证据

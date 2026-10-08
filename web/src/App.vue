@@ -246,7 +246,7 @@ async function onSend(text) {
   threadNotice.value = ''
   messages.value.push({ role: 'user', text: question })
   const reply = reactive({
-    role: 'assistant', text: '', products: [], streaming: true, error: '', warn: '', showAll: false,
+    role: 'assistant', text: '', products: [], streaming: true, error: '', showAll: false,
   })
   messages.value.push(reply)
   input.value = ''
@@ -271,22 +271,8 @@ async function onSend(text) {
       // 带 code 的结束帧由 onEnd 换成 ui_copy 里的文案
       if (!code) reply.error = detail
     },
-    onEnd: ({ code, saved }) => {
-      if (code === 'session_forbidden' || code === 'session_deleted') {
-        reply.error = code === 'session_forbidden' ? ERRORS.forbidden : ERRORS.openFailed
-        // 这个 ID 不能再用了：下一句自动开新会话
-        if (sessionId.value === activeSession) {
-          sessionId.value = ''
-          rememberSession('')
-        }
-        sessions.value = sessions.value.filter((item) => item.session_id !== activeSession)
-        return
-      }
-      if (code === 'stream_broken') {
-        reply.error = ERRORS.streamBroken
-        return
-      }
-      if (!saved) reply.warn = ERRORS.saveFailed
+    onEnd: ({ code }) => {
+      if (code === 'stream_broken') reply.error = ERRORS.streamBroken
     },
     onDone: () => {
       reply.streaming = false
@@ -751,7 +737,6 @@ function logout() {
             </section>
 
             <p v-if="message.error" class="notice notice-error">{{ message.error }}</p>
-            <p v-else-if="message.warn" class="notice notice-warn">{{ message.warn }}</p>
           </div>
         </div>
       </div>

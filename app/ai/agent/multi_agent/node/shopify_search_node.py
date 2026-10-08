@@ -25,6 +25,5 @@ def shopify_search_node(state: ShoppingState):
 
     products = normalize_shopify_products(raw_products)
     products, report = filter_products_by_budget(products, search_input)
-    print(f'[shopify_search] query={search_input.query!r} '
-          f'price_pref={search_input.price_pref!r} 筛选={report}', flush=True)
+    print(f'[shopify_search] query={search_input.query!r} 筛选={report}', flush=True)
     return {'products': products}
